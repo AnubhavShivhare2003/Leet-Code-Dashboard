@@ -11,7 +11,7 @@ const app=express();
 
 // Enable CORS
 const allowedOrigins = [
-  'http://localhost:3000',
+  'https://leet-code-dashboard-eight.vercel.app/',
   'http://localhost:5173',
   process.env.FRONTEND_URL // Add production frontend URL via env
 ].filter(Boolean);
