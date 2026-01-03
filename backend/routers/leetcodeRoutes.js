@@ -386,78 +386,48 @@ leetcodeRoutes.get('/user/:username', async (req, res) => {
 
 // Get LeetCode data for all users (for leaderboard)
 leetcodeRoutes.get('/leaderboard', async (req, res) => {
-  try {
-    // Get all users from database
-    const users = await User.find();
-    
-    if (users.length === 0) {
-      return res.json({
-        status: 'success',
-        message: 'No users found',
-        data: []
-      });
-    }
-    
-    const leaderboardData = [];
-    
-    for (const user of users) {
-      try {
-        // Get LeetCode data for each user
-        const leetcodeData = await LeetCodeModel.findOne({ 
-          username: user.leetcodeProfileID 
-        });
-        
-        if (leetcodeData) {
-          leaderboardData.push({
-            _id: user._id,
-            name: user.name,
-            leetcodeProfile: user.leetcodeProfile,
-            leetcodeProfileID: user.leetcodeProfileID,
-            leetcodeData: {
-              totalSolved: leetcodeData.totalSolved,
-              ranking: leetcodeData.ranking
-            },
-            totalSolved: leetcodeData.totalSolved,
-            ranking: leetcodeData.ranking
-          });
-        } else {
-          // If no data in database, create entry with zeros
-          leaderboardData.push({
-            _id: user._id,
-            name: user.name,
-            leetcodeProfile: user.leetcodeProfile,
-            leetcodeProfileID: user.leetcodeProfileID,
-            leetcodeData: null,
-            totalSolved: 0,
-            ranking: Infinity
-          });
+   try {
+    const leaderboardData = await User.aggregate([
+      {
+        $lookup: {
+          from: 'leetcodes',
+          localField: 'leetcodeProfileID',
+          foreignField: 'username',
+          as: 'leetcodeInfo'
         }
-      } catch (error) {
-        console.error(`Error processing user ${user.name}:`, error);
-        leaderboardData.push({
-          _id: user._id,
-          name: user.name,
-          leetcodeProfile: user.leetcodeProfile,
-          leetcodeProfileID: user.leetcodeProfileID,
-          leetcodeData: null,
-          totalSolved: 0,
-          ranking: Infinity
-        });
+      },
+      {
+        $unwind: {
+          path: '$leetcodeInfo',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $project: {
+          _id: 1,
+          name: 1,
+          leetcodeProfile: 1,
+          leetcodeProfileID: 1,
+          totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
+          ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] }, // High number for those without ranking
+          leetcodeData: {
+            totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
+            ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] }
+          }
+        }
+      },
+      {
+        $sort: {
+          totalSolved: -1,
+          ranking: 1
+        }
       }
-    }
-    
-    // Sort by total solved (descending) and then by ranking (ascending)
-    const sortedData = leaderboardData.sort((a, b) => {
-      if (b.totalSolved !== a.totalSolved) {
-        return b.totalSolved - a.totalSolved;
-      }
-      return a.ranking - b.ranking;
-    });
-    
+    ]);
+
     res.json({
       status: 'success',
       message: 'Leaderboard data retrieved',
-      data: sortedData
+      data: leaderboardData
     });
     
   } catch (error) {
