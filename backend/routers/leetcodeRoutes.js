@@ -154,6 +154,24 @@ async function fetchLeetCodeUserData(username) {
       ? Math.round((totalAcceptedSubmissions / totalSubmissions) * 100) 
       : 0;
 
+    // Recent submissions (limit to last 10)
+    let recentSubmissions = [];
+    if (userProfile.recentSubmissionList) {
+      recentSubmissions = userProfile.recentSubmissionList;
+    } else if (matchedUserData.recentSubmissionList) {
+      recentSubmissions = matchedUserData.recentSubmissionList;
+    } else if (userProfile.recentSubmissions) {
+      recentSubmissions = userProfile.recentSubmissions;
+    }
+
+    const formattedSubmissions = recentSubmissions.slice(0, 10).map(sub => ({
+      title: sub.title || '',
+      titleSlug: sub.titleSlug || '',
+      timestamp: Number(sub.timestamp) || 0,
+      statusDisplay: sub.statusDisplay || '',
+      lang: sub.lang || ''
+    }));
+
     return {
       username: username,
       name: profile.realName || username,
@@ -200,22 +218,8 @@ async function fetchLeetCodeUserData(username) {
             : matchedUserData.submissionCalendar)
         : {},
       
-      // Recent submissions (limit to last 10)
-      recentSubmissions: userProfile.recentSubmissionList ? 
-        userProfile.recentSubmissionList.slice(0, 10).map(sub => ({
-          title: sub.title || '',
-          titleSlug: sub.titleSlug || '',
-          timestamp: sub.timestamp || 0,
-          statusDisplay: sub.statusDisplay || '',
-          lang: sub.lang || ''
-        })) : (matchedUserData.recentSubmissionList ? 
-          matchedUserData.recentSubmissionList.slice(0, 10).map(sub => ({
-            title: sub.title || '',
-            titleSlug: sub.titleSlug || '',
-            timestamp: sub.timestamp || 0,
-            statusDisplay: sub.statusDisplay || '',
-            lang: sub.lang || ''
-          })) : []),
+      // Recent submissions
+      recentSubmissions: formattedSubmissions,
       
       lastUpdated: new Date()
     };
@@ -326,53 +330,37 @@ leetcodeRoutes.get('/user/:username', async (req, res) => {
     const { username } = req.params;
     
     // Try to get data from our database first
-    const leetcodeData = await LeetCodeModel.findOne({ username });
+    let leetcodeData = await LeetCodeModel.findOne({ username });
     
-    if (leetcodeData) {
+    // If data exists but has no submissions, or if it's very old, consider it stale
+    const isStale = leetcodeData && (!leetcodeData.recentSubmissions || leetcodeData.recentSubmissions.length === 0);
+    
+    if (leetcodeData && !isStale) {
       return res.json({
         status: 'success',
         message: 'Data retrieved from database',
-        data: {
-          totalSolved: leetcodeData.totalSolved,
-          totalQuestions: leetcodeData.totalQuestions,
-          easySolved: leetcodeData.easySolved,
-          totalEasy: leetcodeData.totalEasy,
-          mediumSolved: leetcodeData.mediumSolved,
-          totalMedium: leetcodeData.totalMedium,
-          hardSolved: leetcodeData.hardSolved,
-          totalHard: leetcodeData.totalHard,
-          acceptanceRate: leetcodeData.acceptanceRate,
-          ranking: leetcodeData.ranking,
-          reputation: leetcodeData.reputation,
-          contributionPoints: leetcodeData.contributionPoints
-        }
+        data: leetcodeData
       });
     }
     
-    // If not in database, fetch from LeetCode API
+    // If not in database or data is stale (no submissions), fetch from LeetCode API
     const freshData = await fetchLeetCodeUserData(username);
     
-    // Save to database for future use
-    const newLeetCodeUser = new LeetCodeModel(freshData);
-    await newLeetCodeUser.save();
+    if (leetcodeData) {
+      // Update existing record
+      Object.assign(leetcodeData, freshData);
+      await leetcodeData.save();
+    } else {
+      // Save new record
+      const newLeetCodeUser = new LeetCodeModel(freshData);
+      await newLeetCodeUser.save();
+      leetcodeData = newLeetCodeUser;
+    }
     
     res.json({
       status: 'success',
-      message: 'Data fetched from LeetCode API',
-      data: {
-        totalSolved: freshData.totalSolved,
-        totalQuestions: freshData.totalQuestions,
-        easySolved: freshData.easySolved,
-        totalEasy: freshData.totalEasy,
-        mediumSolved: freshData.mediumSolved,
-        totalMedium: freshData.totalMedium,
-        hardSolved: freshData.hardSolved,
-        totalHard: freshData.totalHard,
-        acceptanceRate: freshData.acceptanceRate,
-        ranking: freshData.ranking,
-        reputation: freshData.reputation,
-        contributionPoints: freshData.contributionPoints
-      }
+      message: isStale ? 'Data refreshed from LeetCode API' : 'Data fetched from LeetCode API',
+      data: leetcodeData
     });
     
   } catch (error) {
@@ -386,7 +374,15 @@ leetcodeRoutes.get('/user/:username', async (req, res) => {
 
 // Get LeetCode data for all users (for leaderboard)
 leetcodeRoutes.get('/leaderboard', async (req, res) => {
-   try {
+  try {
+    console.log('Leaderboard endpoint hit');
+    // Calculate yesterday's timestamp at 00:00:00 UTC
+    const now = new Date();
+    // Use UTC date to match LeetCode's submission calendar timestamps
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const yesterdayTimestamp = Math.floor(todayUTC.getTime() / 1000) - 86400;
+    const yesterdayKey = yesterdayTimestamp.toString();
+
     const leaderboardData = await User.aggregate([
       {
         $lookup: {
@@ -409,25 +405,52 @@ leetcodeRoutes.get('/leaderboard', async (req, res) => {
           leetcodeProfile: 1,
           leetcodeProfileID: 1,
           totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
-          ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] }, // High number for those without ranking
+          ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] },
+          submissionCalendar: { $ifNull: ['$leetcodeInfo.submissionCalendar', {}] },
           leetcodeData: {
             totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
             ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] }
           }
         }
-      },
-      {
-        $sort: {
-          totalSolved: -1,
-          ranking: 1
-        }
       }
     ]);
+
+    // Process data to extract yesterday's solved count
+    const processedData = leaderboardData.map(student => {
+      const calendar = student.submissionCalendar || {};
+      
+      // The submissionCalendar can be a Mongoose Map (which becomes an object in aggregate)
+      // or a plain object.
+      let yesterdaySolved = 0;
+      if (calendar[yesterdayKey]) {
+        yesterdaySolved = calendar[yesterdayKey];
+      } else if (typeof calendar.get === 'function') {
+        yesterdaySolved = calendar.get(yesterdayKey) || 0;
+      }
+
+      return {
+        ...student,
+        yesterdaySolved: yesterdaySolved,
+        submissionCalendar: undefined // Don't send the full calendar to frontend
+      };
+    });
+
+    // Default sort by totalSolved (frontend can re-sort)
+    processedData.sort((a, b) => {
+      if (b.totalSolved !== a.totalSolved) {
+        return b.totalSolved - a.totalSolved;
+      }
+      return a.ranking - b.ranking;
+    });
 
     res.json({
       status: 'success',
       message: 'Leaderboard data retrieved',
-      data: leaderboardData
+      data: processedData,
+      meta: {
+        yesterdayDate: new Date(yesterdayTimestamp * 1000).toISOString().split('T')[0],
+        yesterdayTimestamp: yesterdayTimestamp
+      }
     });
     
   } catch (error) {
