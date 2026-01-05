@@ -11,7 +11,7 @@ const StudentList = () => {
     const fetchStudents = async () => {
       try {
         setLoading(true);
-        const response = await fetch('https://leet-code-dashboard.onrender.com/api/users/users');
+        const response = await fetch('http://localhost:4000/api/users/users');
         if (!response.ok) {
           throw new Error('Failed to fetch students');
         }

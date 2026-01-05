@@ -16,7 +16,7 @@ const StudentCard = () => {
         setError(null);
 
         // 1. Fetch student basic info from backend
-        const studentRes = await fetch(`https://leet-code-dashboard.onrender.com/api/users/user/${studentId}`);
+        const studentRes = await fetch(`http://localhost:4000/api/users/user/${studentId}`);
         if (!studentRes.ok) {
           throw new Error(`Failed to fetch student profile: ${studentRes.statusText}`);
         }
@@ -30,7 +30,7 @@ const StudentCard = () => {
         setStudent(studentData);
 
         // 2. Fetch LeetCode detailed data using leetcodeProfileID
-        const leetcodeRes = await fetch(`https://leet-code-dashboard.onrender.com/api/leetcode/user/${studentData.leetcodeProfileID}`);
+        const leetcodeRes = await fetch(`http://localhost:4000/api/leetcode/user/${studentData.leetcodeProfileID}`);
         if (!leetcodeRes.ok) {
           throw new Error(`Failed to fetch LeetCode statistics: ${leetcodeRes.statusText}`);
         }
