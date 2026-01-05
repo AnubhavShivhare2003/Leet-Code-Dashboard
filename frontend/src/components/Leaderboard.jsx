@@ -13,7 +13,7 @@ const Leaderboard = () => {
         setLoading(true);
         
         // Fetch all leaderboard data from our backend
-        const response = await fetch(`https://leet-code-dashboard.onrender.com`);
+        const response = await fetch(`https://leet-code-dashboard.onrender.com/api/leetcode/leaderboard`);
         
         if (!response.ok) {
           throw new Error(`HTTP error! status: ${response.status}`);
