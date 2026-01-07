@@ -79,7 +79,7 @@ router.post('/add-users', async (req, res) => {
 
     // Validate each user object
     const validationErrors = [];
-    const usersToInsert = [];
+    const usersToInsert = []
     const existingUsers = [];
 
     for (const [index, user] of users.entries()) {
