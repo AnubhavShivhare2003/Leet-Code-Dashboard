@@ -197,7 +197,10 @@ router.get('/users', async (req, res) => {
           mediumSolved: '$leetcodeStats.mediumSolved',
           hardSolved: '$leetcodeStats.hardSolved',
           school: '$leetcodeStats.school',
-          countryName: '$leetcodeStats.countryName'
+          countryName: '$leetcodeStats.countryName',
+          reputation: '$leetcodeStats.reputation',
+          contestRating: '$leetcodeStats.contestRating',
+          acceptanceRate: '$leetcodeStats.acceptanceRate'
         }
       }
     ]);

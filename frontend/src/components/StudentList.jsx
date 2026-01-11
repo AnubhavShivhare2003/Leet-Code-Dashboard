@@ -178,7 +178,24 @@ const StudentList = () => {
 
                 {/* Footer */}
                 <div className="flex items-center justify-between text-xs text-gray-500 border-t border-white/5 pt-4">
-                  <span>Joined {new Date(student.createdAt).toLocaleDateString()}</span>
+                  <div className="flex flex-col">
+                    {student.contestRating > 0 ? (
+                      <span className="text-yellow-500/90 font-medium flex items-center gap-1.5" title="Contest Rating">
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-12a1 1 0 10-2 0v4a1 1 0 00.293.707l2.828 2.829a1 1 0 101.415-1.415L11 9.586V6z" clipRule="evenodd"/></svg>
+                        Rating: {Math.round(student.contestRating)}
+                      </span>
+                    ) : student.reputation > 0 ? (
+                      <span className="text-blue-400/90 font-medium flex items-center gap-1.5" title="LeedCode Reputation">
+                        <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z" /></svg>
+                        Reputation: {student.reputation}
+                      </span>
+                    ) : (
+                      <span className="text-gray-400 font-medium flex items-center gap-1.5" title="Acceptance Rate">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        Acc. Rate: {student.acceptanceRate ? student.acceptanceRate.toFixed(1) : 0}%
+                      </span>
+                    )}
+                  </div>
                   <span className="flex items-center text-purple-400 font-medium opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
                     View Profile →
                   </span>
