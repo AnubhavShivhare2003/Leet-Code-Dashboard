@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
+import { api } from '../services/api';
 
 const StudentList = () => {
   const [students, setStudents] = useState([]);
@@ -11,11 +12,7 @@ const StudentList = () => {
     const fetchStudents = async () => {
       try {
         setLoading(true);
-        const response = await fetch('https://leet-code-dashboard.onrender.com/api/users/users');
-        if (!response.ok) {
-          throw new Error('Failed to fetch students');
-        }
-        const result = await response.json();
+        const result = await api.getUsers();
         if (result.success) {
           setStudents(result.data);
         } else {
@@ -73,117 +70,135 @@ const StudentList = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gray-900 py-8 px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
         {/* Header Section */}
-        <div className="text-center mb-12">
-          <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold mb-6 text-white">
-            LeetCode Students
+        <div className="text-center mb-16 relative">
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-purple-500/20 rounded-full blur-[100px] -z-10"></div>
+          <h1 className="text-4xl sm:text-5xl md:text-6xl font-black mb-6 text-transparent bg-clip-text bg-gradient-to-r from-white via-purple-200 to-gray-400 tracking-tight">
+            Student Showcase
           </h1>
-          <p className="text-lg sm:text-xl text-gray-300 max-w-3xl mx-auto leading-relaxed mb-8">
-            Discover and connect with talented developers showcasing their exceptional problem-solving skills
+          <p className="text-lg sm:text-xl text-gray-400 max-w-2xl mx-auto leading-relaxed mb-10">
+            Discover the coding journey of our talented developers
           </p>
           
           {/* Search Bar */}
-          <div className="relative max-w-md mx-auto">
-            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <svg className="h-5 w-5 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <div className="relative max-w-xl mx-auto group">
+            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+              <svg className="h-5 w-5 text-gray-500 group-focus-within:text-purple-400 transition-colors duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
             </div>
             <input
               type="text"
-              placeholder="Search students by name or username..."
-              className="w-full pl-10 pr-4 py-3 bg-gray-800/50 border border-gray-700 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gray-500 focus:border-transparent transition-all duration-200"
+              placeholder="Search by name or username..."
+              className="w-full pl-12 pr-4 py-4 bg-white/5 border border-white/10 rounded-2xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50 focus:border-purple-500/50 transition-all duration-300 backdrop-blur-sm shadow-xl"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
         </div>
-        
-        {/* Students Grid or No Results */}
-        {filteredStudents.length > 0 ? (
-          <div className="grid grid-cols-1 xs:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 sm:gap-6">
-            {filteredStudents.map((student, index) => (
-              <Link
-                key={student._id}
-                to={`/student/${student._id}`}
-                className="group relative bg-gray-800 rounded-xl sm:rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 hover:-translate-y-1 p-4 sm:p-6 border border-gray-700 hover:border-gray-400 overflow-hidden block"
-              >
-              {/* Accent bar */}
-                <div className="absolute top-0 left-0 w-full h-1 bg-gray-600"></div>
-              
-              <div className="relative z-10 flex flex-col h-full">
-                {/* Profile avatar */}
-                <div className="flex justify-center mb-4">
-                  <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-full bg-gray-600 flex items-center justify-center text-white text-xl sm:text-2xl font-bold shadow-lg">
-                    {student.name.charAt(0).toUpperCase()}
-                  </div>
-                </div>
 
-                {/* Student info */}
-                <div className="text-center mb-4 flex-1">
-                  <h3 className="text-lg sm:text-xl font-semibold text-white mb-2 group-hover:text-gray-300 transition-colors duration-300 line-clamp-1">
-                    {student.name}
-                  </h3>
-                  <p className="text-xs sm:text-sm text-gray-400 bg-gray-700 px-2 sm:px-3 py-1 rounded-full inline-block font-mono border border-gray-600 mb-3">
-                    @{student.leetcodeProfileID}
-                  </p>
+        {/* Students Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+          {filteredStudents.map((student) => (
+            <Link
+              key={student._id}
+              to={`/student/${student._id}`}
+              className="group relative bg-gray-800/40 border border-gray-700/50 rounded-2xl overflow-hidden hover:border-purple-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(168,85,247,0.15)] hover:-translate-y-1"
+            >
+              {/* Card Background Gradient */}
+              <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-blue-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+
+              <div className="p-6 relative z-10">
+                {/* Header: Avatar & Info */}
+                <div className="flex items-center space-x-4 mb-6">
+                  <div className="relative">
+                    {student.userAvatar ? (
+                      <img 
+                        src={student.userAvatar} 
+                        alt={student.name}
+                        className="w-16 h-16 rounded-full border-2 border-white/10 shadow-lg object-cover group-hover:border-purple-500/50 transition-colors duration-300"
+                      />
+                    ) : (
+                      <div className="w-16 h-16 rounded-full bg-gradient-to-br from-gray-700 to-gray-800 flex items-center justify-center text-xl font-bold text-white border-2 border-white/10 shadow-lg group-hover:border-purple-500/50 transition-colors duration-300">
+                        {student.name.charAt(0).toUpperCase()}
+                      </div>
+                    )}
+                    {student.ranking > 0 && student.ranking < 100000 && (
+                      <div className="absolute -bottom-1 -right-1 bg-yellow-500/90 text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm border border-yellow-400">
+                        Top
+                      </div>
+                    )}
+                  </div>
                   
-                  {/* LeetCode Profile Link */}
-                  <div className="mt-3">
-                    <a 
-                      href={student.leetcodeProfile}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="inline-block text-xs text-gray-400 hover:text-gray-300 transition-colors duration-300"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      View LeetCode Profile
-                    </a>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-lg font-bold text-white truncate group-hover:text-purple-400 transition-colors duration-300">
+                      {student.name}
+                    </h3>
+                    <p className="text-sm text-gray-500 font-mono truncate mb-1">
+                      @{student.leetcodeProfileID}
+                    </p>
+                    {student.countryName && (
+                      <div className="flex items-center text-xs text-gray-400 gap-1 truncate">
+                        <span>📍 {student.countryName}</span>
+                      </div>
+                    )}
+                    {student.school && (
+                      <div className="flex items-center text-xs text-gray-500 gap-1 truncate mt-0.5">
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
+                        <span className="truncate">{student.school}</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 
-                {/* Action button */}
-                <div className="text-center mt-auto pt-4">
-                  <div className="inline-block bg-gray-700 text-white font-semibold text-sm sm:text-base px-4 sm:px-6 py-2 sm:py-3 rounded-full hover:bg-gray-600 transition-all duration-300 hover:-translate-y-0.5 hover:scale-105 transform w-full max-w-xs mx-auto text-center">
-                    View Details
-                    <span className="ml-1 sm:ml-2 text-xs sm:text-sm inline-block group-hover:translate-x-1 transition-transform duration-300">→</span>
+                {/* Stats Row */}
+                <div className="grid grid-cols-2 gap-3 mb-6">
+                  <div className="bg-white/5 rounded-xl p-3 text-center border border-white/5">
+                    <div className="text-xs text-gray-400 mb-1 uppercase tracking-wider">Solved</div>
+                    <div className="text-xl font-black text-white group-hover:text-purple-300 transition-colors">
+                      {student.totalSolved || 0}
+                    </div>
                   </div>
+                  <div className="bg-white/5 rounded-xl p-3 text-center border border-white/5">
+                    <div className="text-xs text-gray-400 mb-1 uppercase tracking-wider">Rank</div>
+                    <div className="text-sm font-bold text-white truncate group-hover:text-blue-300 transition-colors">
+                      {student.ranking ? `#${student.ranking.toLocaleString()}` : 'N/A'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Difficulty Bars (Mini Visualization) */}
+                <div className="flex h-1.5 w-full rounded-full overflow-hidden bg-gray-700/50 mb-6">
+                  <div style={{ width: `${(student.easySolved / (student.totalSolved || 1)) * 100}%` }} className="bg-emerald-500/70"></div>
+                  <div style={{ width: `${(student.mediumSolved / (student.totalSolved || 1)) * 100}%` }} className="bg-yellow-500/70"></div>
+                  <div style={{ width: `${(student.hardSolved / (student.totalSolved || 1)) * 100}%` }} className="bg-red-500/70"></div>
+                </div>
+
+                {/* Footer */}
+                <div className="flex items-center justify-between text-xs text-gray-500 border-t border-white/5 pt-4">
+                  <span>Joined {new Date(student.createdAt).toLocaleDateString()}</span>
+                  <span className="flex items-center text-purple-400 font-medium opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-x-2 group-hover:translate-x-0">
+                    View Profile →
+                  </span>
                 </div>
               </div>
-
-              {/* Hover effect overlay */}
-              <div className="absolute inset-0 bg-gray-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300 rounded-xl sm:rounded-2xl"></div>
             </Link>
           ))}
         </div>
-        ) : (
-          <div className="text-center py-16">
-            <div className="flex flex-col items-center justify-center">
-              <svg className="w-16 h-16 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.172 16.172a4 4 0 015.656 0M9 12h6m-6-4h6m2 5.291A7.962 7.962 0 0112 15c-2.34 0-4.47.86-6.09 2.28" />
+
+        {filteredStudents.length === 0 && !loading && (
+          <div className="text-center py-20">
+            <div className="w-20 h-20 bg-gray-800 rounded-full flex items-center justify-center mx-auto mb-6">
+              <svg className="w-10 h-10 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
               </svg>
-              <h3 className="text-xl font-semibold text-gray-300 mb-2">No students found</h3>
-              <p className="text-gray-400 max-w-md">
-                No students match your search for "{searchTerm}". Try a different name or username.
-              </p>
             </div>
+            <h3 className="text-2xl font-bold text-white mb-2">No students found</h3>
+            <p className="text-gray-400">Try adjusting your search criteria</p>
           </div>
         )}
-
-        {/* Stats and footer */}
-        <div className="text-center mt-12 pt-8 border-t border-gray-700">
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8">
-            <p className="text-gray-400 text-sm sm:text-base">
-              Showing <span className="text-gray-300 font-semibold">{filteredStudents.length}</span> talented developers
-            </p>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
-              <span className="text-xs text-gray-400">Live backend connection active</span>
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );

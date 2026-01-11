@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { useParams, Link } from 'react-router-dom';
+import { api } from '../services/api';
 
 const StudentCard = () => {
   const { studentId } = useParams();
@@ -16,11 +17,7 @@ const StudentCard = () => {
         setError(null);
 
         // 1. Fetch student basic info from backend
-        const studentRes = await fetch(`https://leet-code-dashboard.onrender.com/api/users/user/${studentId}`);
-        if (!studentRes.ok) {
-          throw new Error(`Failed to fetch student profile: ${studentRes.statusText}`);
-        }
-        const studentResult = await studentRes.json();
+        const studentResult = await api.getUserById(studentId);
         
         if (!studentResult.success) {
           throw new Error(studentResult.message || 'Student not found');
@@ -30,13 +27,37 @@ const StudentCard = () => {
         setStudent(studentData);
 
         // 2. Fetch LeetCode detailed data using leetcodeProfileID
-        const leetcodeRes = await fetch(`https://leet-code-dashboard.onrender.com/api/leetcode/user/${studentData.leetcodeProfileID}`);
-        if (!leetcodeRes.ok) {
-          throw new Error(`Failed to fetch LeetCode statistics: ${leetcodeRes.statusText}`);
-        }
-        const leetcodeResult = await leetcodeRes.json();
+        const leetcodeResult = await api.getLeetCodeStats(studentData.leetcodeProfileID);
         
         if (leetcodeResult.status === 'success') {
+          // Calculate dynamic yesterday submissions from calendar to avoid stale data
+          let calculatedYesterdaySubs = leetcodeResult.data.yesterdaySubmissions || 0;
+          
+          if (leetcodeResult.data.submissionCalendar) {
+            try {
+              const calendar = typeof leetcodeResult.data.submissionCalendar === 'string' 
+                ? JSON.parse(leetcodeResult.data.submissionCalendar) 
+                : leetcodeResult.data.submissionCalendar;
+                
+              const now = new Date();
+              const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+              const yesterdayTimestamp = Math.floor(todayUTC.getTime() / 1000) - 86400;
+              
+              // Check if the key exists (LeetCode uses unix timestamp as key)
+              if (calendar[yesterdayTimestamp]) {
+                calculatedYesterdaySubs = calendar[yesterdayTimestamp];
+              } else {
+                // If key is missing for yesterday, it means 0 submissions
+                // Only overwrite if we have a valid calendar
+                if (Object.keys(calendar).length > 0) {
+                  calculatedYesterdaySubs = 0;
+                }
+              }
+            } catch (e) {
+              console.error('Error calculating yesterday submissions:', e);
+            }
+          }
+
           setLeetcodeData({
             status: 'success',
             totalSolved: leetcodeResult.data.totalSolved || 0,
@@ -49,8 +70,8 @@ const StudentCard = () => {
             totalHard: leetcodeResult.data.totalHard || 0,
             acceptanceRate: leetcodeResult.data.acceptanceRate || 0,
             ranking: leetcodeResult.data.ranking || 0,
-            contributionPoints: leetcodeResult.data.contributionPoints || 0,
-            reputation: leetcodeResult.data.reputation || 0,
+            yesterdaySubmissions: calculatedYesterdaySubs,
+            yesterdayQuestionsSolved: leetcodeResult.data.yesterdayQuestionsSolved || 0,
             githubUrl: leetcodeResult.data.githubUrl || '',
             userAvatar: leetcodeResult.data.userAvatar || '',
             aboutMe: leetcodeResult.data.aboutMe || '',
@@ -61,7 +82,8 @@ const StudentCard = () => {
             badges: leetcodeResult.data.badges || [],
             recentSubmissions: leetcodeResult.data.recentSubmissions || [],
             contestRating: leetcodeResult.data.contestRating || 0,
-            lastUpdated: leetcodeResult.data.lastUpdated
+            lastUpdated: leetcodeResult.data.lastUpdated,
+            submissionCalendar: leetcodeResult.data.submissionCalendar || {}
           });
         } else {
           // If LeetCode data fails, we still have the student profile
@@ -154,7 +176,7 @@ const StudentCard = () => {
                   <img 
                     src={leetcodeData.userAvatar} 
                     alt={student.name}
-                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white/20 shadow-xl object-cover grayscale"
+                    className="w-20 h-20 sm:w-24 sm:h-24 rounded-full border-4 border-white/20 shadow-xl object-cover"
                   />
                 ) : (
                   <div className="w-20 h-20 sm:w-24 sm:h-24 rounded-full bg-white/10 flex items-center justify-center text-white text-4xl sm:text-5xl font-bold shadow-lg backdrop-blur-sm border-4 border-white/20">
@@ -239,26 +261,30 @@ const StudentCard = () => {
             )}
 
             {/* Stats Grid */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-              <div className="bg-white/5 rounded-xl p-4 text-center border border-white/10">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+              <div className="bg-white/5 rounded-xl p-4 text-center border border-white/10 group hover:border-white/30 transition-colors">
                 <div className="text-2xl font-bold text-white">{leetcodeData.totalSolved}</div>
-                <div className="text-sm text-white/40">Solved</div>
+                <div className="text-sm text-white/40 group-hover:text-white/60 transition-colors">Total Solved</div>
               </div>
-              <div className="bg-white/5 rounded-xl p-4 text-center border border-white/10">
+              <div className="bg-white/5 rounded-xl p-4 text-center border border-white/10 group hover:border-white/30 transition-colors">
                 <div className="text-2xl font-bold text-white">{leetcodeData.acceptanceRate.toFixed(1)}%</div>
-                <div className="text-sm text-white/40">Acceptance</div>
+                <div className="text-sm text-white/40 group-hover:text-white/60 transition-colors">Acceptance</div>
               </div>
-              <div className="bg-white/5 rounded-xl p-4 text-center border border-white/10">
-                <div className="text-2xl font-bold text-white">#{leetcodeData.ranking > 0 ? leetcodeData.ranking.toLocaleString() : 'N/A'}</div>
-                <div className="text-sm text-white/40">Rank</div>
+              <div className="bg-white/5 rounded-xl p-4 text-center border border-white/10 group hover:border-white/30 transition-colors">
+                <div className="text-lg sm:text-xl md:text-2xl font-bold text-white break-all">#{leetcodeData.ranking.toLocaleString()}</div>
+                <div className="text-sm text-white/40 group-hover:text-white/60 transition-colors">Global Rank</div>
               </div>
-              <div className="bg-white/5 rounded-xl p-4 text-center border border-white/10">
-                <div className="text-2xl font-bold text-white">{leetcodeData.contributionPoints}</div>
-                <div className="text-sm text-white/40">Points</div>
-              </div>
-              <div className="bg-white/5 rounded-xl p-4 text-center border border-white/10">
-                <div className="text-2xl font-bold text-white">{leetcodeData.reputation}</div>
-                <div className="text-sm text-white/40">Reputation</div>
+              <div className="bg-white/5 rounded-xl p-4 text-center border border-emerald-500/30 group hover:border-emerald-500/50 transition-colors bg-emerald-500/5">
+                 <div className="text-2xl font-bold text-emerald-400">{leetcodeData.yesterdayQuestionsSolved}</div>
+                 <div className="text-sm text-emerald-400/60 group-hover:text-emerald-400/80 transition-colors">Yesterday Solved</div>
+               </div>
+             </div>
+             
+             {/* Secondary Stats */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
+              <div className="bg-white/5 rounded-xl p-4 text-center border border-white/10 group hover:border-white/30 transition-colors">
+                <div className="text-2xl font-bold text-white">{leetcodeData.yesterdaySubmissions}</div>
+                <div className="text-sm text-white/40 group-hover:text-white/60 transition-colors">Yesterday Subs</div>
               </div>
             </div>
 
@@ -272,7 +298,7 @@ const StudentCard = () => {
                 <div className="flex flex-wrap gap-4">
                   {leetcodeData.badges.map((badge, idx) => (
                     <div key={idx} className="group relative">
-                      <div className="w-16 h-16 bg-white/5 rounded-lg p-2 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors duration-300 cursor-help grayscale">
+                      <div className="w-16 h-16 bg-white/5 rounded-lg p-2 border border-white/10 flex items-center justify-center hover:bg-white/10 transition-colors duration-300 cursor-help">
                         {badge.icon.startsWith('http') ? (
                           <img src={badge.icon} alt={badge.displayName} className="w-12 h-12 object-contain" />
                         ) : (
