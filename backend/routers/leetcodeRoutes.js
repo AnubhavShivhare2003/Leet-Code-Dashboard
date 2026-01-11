@@ -154,7 +154,13 @@ async function fetchLeetCodeUserData(username) {
       ? Math.round((totalAcceptedSubmissions / totalSubmissions) * 100) 
       : 0;
 
-    // Recent submissions (limit to last 10)
+    // Calculate yesterday's timestamp for unique questions solved
+    const now = new Date();
+    const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const yesterdayTimestamp = Math.floor(todayUTC.getTime() / 1000) - 86400;
+    const todayTimestamp = yesterdayTimestamp + 86400;
+
+    // Recent submissions (limit to last 20)
     let recentSubmissions = [];
     if (userProfile.recentSubmissionList) {
       recentSubmissions = userProfile.recentSubmissionList;
@@ -164,13 +170,40 @@ async function fetchLeetCodeUserData(username) {
       recentSubmissions = userProfile.recentSubmissions;
     }
 
-    const formattedSubmissions = recentSubmissions.slice(0, 10).map(sub => ({
+    const formattedSubmissions = recentSubmissions.slice(0, 20).map(sub => ({
       title: sub.title || '',
       titleSlug: sub.titleSlug || '',
       timestamp: Number(sub.timestamp) || 0,
       statusDisplay: sub.statusDisplay || '',
       lang: sub.lang || ''
     }));
+
+    // Calculate unique questions solved yesterday from recent submissions
+    const uniqueAcceptedYesterday = new Set();
+    let yesterdaySubmissions = 0;
+    
+    // Check submission calendar for submission count (more accurate for total count)
+    const submissionCalendar = matchedUserData.submissionCalendar 
+      ? (typeof matchedUserData.submissionCalendar === 'string' 
+          ? JSON.parse(matchedUserData.submissionCalendar) 
+          : matchedUserData.submissionCalendar)
+      : {};
+      
+    if (submissionCalendar[yesterdayTimestamp.toString()]) {
+      yesterdaySubmissions = submissionCalendar[yesterdayTimestamp.toString()];
+    }
+
+    formattedSubmissions.forEach(sub => {
+      if (sub.timestamp >= yesterdayTimestamp && sub.timestamp < todayTimestamp) {
+        if (sub.statusDisplay === 'Accepted') {
+          uniqueAcceptedYesterday.add(sub.titleSlug || sub.title);
+        }
+      }
+    });
+    const yesterdayQuestionsSolved = uniqueAcceptedYesterday.size;
+
+    // Points calculation (example: 10 points for hard, 5 for medium, 2 for easy)
+    const points = (hardSolved * 10) + (mediumSolved * 5) + (easySolved * 2);
 
     return {
       username: username,
@@ -205,6 +238,7 @@ async function fetchLeetCodeUserData(username) {
       ranking: profile.ranking || 0,
       reputation: profile.reputation || 0,
       contributionPoints: matchedUserData.contributions?.points || 0,
+      points,
       
       // Badges and achievements
       badges: matchedUserData.badges || [],
@@ -212,14 +246,12 @@ async function fetchLeetCodeUserData(username) {
       activeBadge: matchedUserData.activeBadge || { id: '' },
       
       // Submission calendar - parse JSON string to object
-      submissionCalendar: matchedUserData.submissionCalendar 
-        ? (typeof matchedUserData.submissionCalendar === 'string' 
-            ? JSON.parse(matchedUserData.submissionCalendar) 
-            : matchedUserData.submissionCalendar)
-        : {},
+      submissionCalendar,
       
       // Recent submissions
       recentSubmissions: formattedSubmissions,
+      yesterdayQuestionsSolved: yesterdayQuestionsSolved,
+      yesterdaySubmissions: yesterdaySubmissions,
       
       lastUpdated: new Date()
     };
@@ -233,8 +265,8 @@ async function fetchLeetCodeUserData(username) {
 async function updateAllUsersLeetCodeData() {
   try {
     
-    // Get all users from the database
-    const users = await User.find();
+    // Get all users from the database with a LeetCode profile
+    const users = await User.find({ leetcodeProfileID: { $ne: null, $exists: true } });
     
     if (users.length === 0) {
       return { success: 0, failed: 0 };
@@ -248,24 +280,18 @@ async function updateAllUsersLeetCodeData() {
         // Fetch LeetCode data using the leetcodeProfileID
         const leetcodeData = await fetchLeetCodeUserData(user.leetcodeProfileID);
         
-        // Save or update in LeetCode collection
-        const existingLeetCodeUser = await LeetCodeModel.findOne({ username: user.leetcodeProfileID });
-        
-        if (existingLeetCodeUser) {
-          Object.assign(existingLeetCodeUser, leetcodeData);
-          await existingLeetCodeUser.save();
-          results.push({
-            username: user.leetcodeProfileID,
-            status: 'updated'
-          });
-        } else {
-          const newLeetCodeUser = new LeetCodeModel(leetcodeData);
-          await newLeetCodeUser.save();
-          results.push({
-            username: user.leetcodeProfileID,
-            status: 'created'
-          });
-        }
+        // Save or update in LeetCode collection using a single operation
+        const updateResult = await LeetCodeModel.findOneAndUpdate(
+          { username: user.leetcodeProfileID },
+          leetcodeData,
+          { upsert: true, new: false, setDefaultsOnInsert: true }
+        );
+
+        results.push({
+          username: user.leetcodeProfileID,
+          status: updateResult ? 'updated' : 'created'
+        });
+
       } catch (error) {
         errors.push({
           username: user.leetcodeProfileID,
@@ -407,31 +433,66 @@ leetcodeRoutes.get('/leaderboard', async (req, res) => {
           totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
           ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] },
           submissionCalendar: { $ifNull: ['$leetcodeInfo.submissionCalendar', {}] },
+          recentSubmissions: { $ifNull: ['$leetcodeInfo.recentSubmissions', []] },
+          yesterdayQuestionsSolved: { $ifNull: ['$leetcodeInfo.yesterdayQuestionsSolved', 0] },
+          yesterdaySubmissions: { $ifNull: ['$leetcodeInfo.yesterdaySubmissions', 0] },
           leetcodeData: {
             totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
-            ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] }
+            ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] },
+            easySolved: { $ifNull: ['$leetcodeInfo.easySolved', 0] },
+            mediumSolved: { $ifNull: ['$leetcodeInfo.mediumSolved', 0] },
+            hardSolved: { $ifNull: ['$leetcodeInfo.hardSolved', 0] }
           }
         }
       }
     ]);
 
-    // Process data to extract yesterday's solved count
+    // Process data to extract yesterday's statistics
+    console.log(`Processing leaderboard for yesterdayKey: ${yesterdayKey}`);
     const processedData = leaderboardData.map(student => {
       const calendar = student.submissionCalendar || {};
+      const submissions = student.recentSubmissions || [];
       
-      // The submissionCalendar can be a Mongoose Map (which becomes an object in aggregate)
-      // or a plain object.
-      let yesterdaySolved = 0;
-      if (calendar[yesterdayKey]) {
-        yesterdaySolved = calendar[yesterdayKey];
-      } else if (typeof calendar.get === 'function') {
-        yesterdaySolved = calendar.get(yesterdayKey) || 0;
+      // Helper to get value from Map or plain object
+      const getVal = (obj, key) => {
+        if (!obj) return 0;
+        if (typeof obj.get === 'function') {
+            try { return obj.get(key) || 0; } catch(e) { return obj[key] || 0; }
+        }
+        return obj[key] || 0;
+      };
+
+      // 1. Calculate Yesterday Submissions
+      // Use pre-calculated value from DB if available
+      let yesterdaySubmissions = student.yesterdaySubmissions || 0;
+      
+      // Fallback: recalculate if it's 0 but we have calendar (just in case)
+      if (yesterdaySubmissions === 0) {
+        yesterdaySubmissions = parseInt(getVal(calendar, yesterdayKey)) || 0;
+      }
+
+      // 2. Calculate Yesterday Questions Solved
+      // Use pre-calculated value from DB if available
+      let yesterdayQuestionsSolved = student.yesterdayQuestionsSolved || 0;
+      
+      // Fallback: recalculate if it's 0 but we have submissions (just in case)
+      if (yesterdayQuestionsSolved === 0) {
+          const todayTimestamp = yesterdayTimestamp + 86400;
+          const uniqueAcceptedYesterday = new Set();
+          submissions.forEach(sub => {
+            if (sub.timestamp >= yesterdayTimestamp && sub.timestamp < todayTimestamp) {
+              if (sub.statusDisplay === 'Accepted') {
+                uniqueAcceptedYesterday.add(sub.titleSlug || sub.title);
+              }
+            }
+          });
+          yesterdayQuestionsSolved = uniqueAcceptedYesterday.size;
       }
 
       return {
         ...student,
-        yesterdaySolved: yesterdaySolved,
-        submissionCalendar: undefined // Don't send the full calendar to frontend
+        yesterdaySubmissions,
+        yesterdayQuestionsSolved
       };
     });
 

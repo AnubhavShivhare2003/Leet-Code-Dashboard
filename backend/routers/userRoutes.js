@@ -79,7 +79,7 @@ router.post('/add-users', async (req, res) => {
 
     // Validate each user object
     const validationErrors = [];
-    const usersToInsert = []
+    const usersToInsert = [];
     const existingUsers = [];
 
     for (const [index, user] of users.entries()) {
@@ -163,10 +163,45 @@ router.post('/add-users', async (req, res) => {
   }
 });
 
-// Route 3: Get all users (optional - for testing)
+// Route 3: Get all users with LeetCode stats
 router.get('/users', async (req, res) => {
   try {
-    const users = await User.find().sort({ createdAt: -1 });
+    const users = await User.aggregate([
+      {
+        $lookup: {
+          from: 'leetcodes',
+          localField: 'leetcodeProfileID',
+          foreignField: 'username',
+          as: 'leetcodeStats'
+        }
+      },
+      {
+        $unwind: {
+          path: '$leetcodeStats',
+          preserveNullAndEmptyArrays: true
+        }
+      },
+      {
+        $sort: { createdAt: -1 }
+      },
+      {
+        $project: {
+          name: 1,
+          leetcodeProfileID: 1,
+          leetcodeProfile: 1,
+          createdAt: 1,
+          userAvatar: '$leetcodeStats.userAvatar',
+          totalSolved: '$leetcodeStats.totalSolved',
+          ranking: '$leetcodeStats.ranking',
+          easySolved: '$leetcodeStats.easySolved',
+          mediumSolved: '$leetcodeStats.mediumSolved',
+          hardSolved: '$leetcodeStats.hardSolved',
+          school: '$leetcodeStats.school',
+          countryName: '$leetcodeStats.countryName'
+        }
+      }
+    ]);
+
     res.status(200).json({
       success: true,
       data: users
@@ -196,6 +231,157 @@ router.get('/user/:id', async (req, res) => {
     });
   } catch (error) {
     console.error('Error fetching user by ID:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Route 5: Bulk Upsert (Check and Update if exists, Create if not)
+router.post('/bulk-upsert', async (req, res) => {
+  try {
+    const users = req.body;
+    
+    if (!Array.isArray(users)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Request body must be an array of users'
+      });
+    }
+
+    const results = {
+      processed: 0,
+      created: 0,
+      updated: 0,
+      failed: 0,
+      details: []
+    };
+
+    for (const user of users) {
+      const { name, leetcodeProfile, leetcodeProfileID } = user;
+
+      // Basic validation
+      if (!name || !leetcodeProfile || !leetcodeProfileID) {
+        results.failed++;
+        results.details.push({
+          leetcodeProfileID: leetcodeProfileID || 'unknown',
+          status: 'failed',
+          message: 'Missing required fields'
+        });
+        continue;
+      }
+
+      try {
+        // Try to find the user first to determine action
+        const existingUser = await User.findOne({
+          $or: [
+            { leetcodeProfileID: leetcodeProfileID },
+            { leetcodeProfile: leetcodeProfile },
+            { name: name }
+          ]
+        });
+
+        if (existingUser) {
+          // Update
+          existingUser.name = name;
+          existingUser.leetcodeProfile = leetcodeProfile;
+          existingUser.leetcodeProfileID = leetcodeProfileID; // Update ID in case it was found by URL and ID is different
+          await existingUser.save();
+          
+          results.updated++;
+          results.details.push({ leetcodeProfileID, status: 'updated' });
+        } else {
+          // Create
+          const newUser = new User({
+            name,
+            leetcodeProfile,
+            leetcodeProfileID
+          });
+          await newUser.save();
+          
+          results.created++;
+          results.details.push({ leetcodeProfileID, status: 'created' });
+        }
+        results.processed++;
+
+      } catch (err) {
+        results.failed++;
+        results.details.push({
+          leetcodeProfileID,
+          status: 'failed',
+          message: err.message
+        });
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Bulk operation completed. Added: ${results.created}, Updated: ${results.updated}, Failed: ${results.failed}`,
+      counts: {
+        added: results.created,
+        updated: results.updated,
+        failed: results.failed,
+        total: results.processed
+      },
+      details: results.details
+    });
+
+  } catch (error) {
+    console.error('Error in bulk upsert:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Internal server error'
+    });
+  }
+});
+
+// Route 6: Delete users with duplicate names
+router.delete('/delete-duplicates', async (req, res) => {
+  try {
+    // 1. Find names that have duplicates
+    const duplicates = await User.aggregate([
+      {
+        $group: {
+          _id: "$name", // Group by name
+          count: { $sum: 1 },
+          ids: { $push: "$_id" }
+        }
+      },
+      {
+        $match: {
+          count: { $gt: 1 } // Filter for names appearing more than once
+        }
+      }
+    ]);
+
+    if (duplicates.length === 0) {
+      return res.status(200).json({
+        success: true,
+        message: 'No duplicate users found by name',
+        deletedCount: 0
+      });
+    }
+
+    // 2. Extract all IDs to delete (delete ALL records for duplicate names)
+    const idsToDelete = duplicates.reduce((acc, curr) => {
+      return acc.concat(curr.ids);
+    }, []);
+
+    const namesToDelete = duplicates.map(d => d._id);
+
+    // 3. Delete the users
+    const deleteResult = await User.deleteMany({ _id: { $in: idsToDelete } });
+
+    res.status(200).json({
+      success: true,
+      message: `Deleted ${deleteResult.deletedCount} users with duplicate names.`,
+      deletedCount: deleteResult.deletedCount,
+      deletedNames: namesToDelete
+    });
+
+  } catch (error) {
+    console.error('Error deleting duplicates:', error);
     res.status(500).json({
       success: false,
       message: 'Internal server error'

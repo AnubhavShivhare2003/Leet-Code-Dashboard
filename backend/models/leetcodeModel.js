@@ -105,6 +105,10 @@ const leetcodeSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  points: {
+    type: Number,
+    default: 0
+  },
   
   // Badges and achievements
   badges: [{
@@ -123,19 +127,24 @@ const leetcodeSchema = new mongoose.Schema({
   
   // Submission calendar (heatmap data)
   submissionCalendar: {
-    type: Map,
-    of: Number,
+    type: mongoose.Schema.Types.Mixed,
     default: {}
   },
   
   // Recent submissions
-  recentSubmissions: [{
-    title: String,
-    titleSlug: String,
-    timestamp: Number,
-    statusDisplay: String,
-    lang: String
-  }],
+  recentSubmissions: {
+    type: mongoose.Schema.Types.Mixed,
+    default: []
+  },
+  
+  yesterdayQuestionsSolved: {
+    type: Number,
+    default: 0
+  },
+  yesterdaySubmissions: {
+    type: Number,
+    default: 0
+  },
   
   // Contest information
   contestParticipation: {
@@ -158,9 +167,6 @@ const leetcodeSchema = new mongoose.Schema({
 }, {
   timestamps: true
 });
-
-// Index for faster queries by username
-leetcodeSchema.index({ username: 1 });
 
 // Index for ranking and sorting
 leetcodeSchema.index({ ranking: 1 });
