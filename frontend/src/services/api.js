@@ -29,9 +29,15 @@ export const api = {
   },
 
   // LeetCode API
-  getLeaderboard: async () => {
+  getLeaderboard: async ({ page = 1, limit = 20, sortBy = 'total', college = 'All' } = {}) => {
     try {
-      const response = await fetch(`${API_BASE_URL}/leetcode/leaderboard`);
+      const queryParams = new URLSearchParams({
+        page,
+        limit,
+        sortBy,
+        college
+      });
+      const response = await fetch(`${API_BASE_URL}/leetcode/leaderboard?${queryParams}`);
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }

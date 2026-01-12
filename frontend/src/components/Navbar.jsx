@@ -24,11 +24,10 @@ const Navbar = () => {
             <Link
               to="/"
               className={`px-2 py-1 md:px-3 md:py-2 text-xs md:text-sm font-medium transition-colors duration-200 ${isActive('/')}`}
-              title="Students"
+              title="Dashboard"
             >
-              {/* Icon for mobile, text for desktop */}
-              <span className="md:hidden">👥</span>
-              <span className="hidden md:inline">Students</span>
+              <span className="md:hidden">🏠</span>
+              <span className="hidden md:inline">Dashboard</span>
             </Link>
             <Link
               to="/leaderboard"

@@ -11,9 +11,16 @@ const userSchema = new mongoose.Schema({
     required: true,
     trim: true
   },
+  college: {
+    type: String,
+    required: false,
+    trim: true,
+    default: ''
+  },
   leetcodeProfile: {
     type: String,
     required: true,
+    trim: true,
     validate: {
       validator: function(v) {
         return /^https:\/\/leetcode\.com\/u\/[A-Za-z0-9_-]+\/?$/
@@ -25,6 +32,7 @@ const userSchema = new mongoose.Schema({
   leetcodeProfileID: {
     type: String,
     required: true,
+    trim: true,
     validate: {
       validator: function(v) {
         return /^[\w\d_\-]+$/.test(v);

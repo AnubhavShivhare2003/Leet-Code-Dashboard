@@ -6,7 +6,13 @@ const router = express.Router();
 // Route 1: Add a single user
 router.post('/add-user', async (req, res) => {
   try {
-    const { name, leetcodeProfile, leetcodeProfileID } = req.body;
+    let { name, college, leetcodeProfile, leetcodeProfileID } = req.body;
+
+    // Trim inputs to avoid whitespace issues
+    name = name ? name.trim() : name;
+    college = college ? college.trim() : '';
+    leetcodeProfile = leetcodeProfile ? leetcodeProfile.trim() : leetcodeProfile;
+    leetcodeProfileID = leetcodeProfileID ? leetcodeProfileID.trim() : leetcodeProfileID;
 
     // Validate required fields
     if (!name || !leetcodeProfile || !leetcodeProfileID) {
@@ -34,6 +40,7 @@ router.post('/add-user', async (req, res) => {
     // Create new user
     const newUser = new User({
       name,
+      college: college || '',
       leetcodeProfile,
       leetcodeProfileID
     });
@@ -83,7 +90,13 @@ router.post('/add-users', async (req, res) => {
     const existingUsers = [];
 
     for (const [index, user] of users.entries()) {
-      const { name, leetcodeProfile, leetcodeProfileID } = user;
+      let { name, college, leetcodeProfile, leetcodeProfileID } = user;
+
+      // Trim inputs
+      name = name ? name.trim() : name;
+      college = college ? college.trim() : '';
+      leetcodeProfile = leetcodeProfile ? leetcodeProfile.trim() : leetcodeProfile;
+      leetcodeProfileID = leetcodeProfileID ? leetcodeProfileID.trim() : leetcodeProfileID;
 
       // Check required fields
       if (!name || !leetcodeProfile || !leetcodeProfileID) {
@@ -111,6 +124,7 @@ router.post('/add-users', async (req, res) => {
 
       usersToInsert.push({
         name,
+        college: college || '',
         leetcodeProfile,
         leetcodeProfileID
       });
@@ -187,6 +201,7 @@ router.get('/users', async (req, res) => {
       {
         $project: {
           name: 1,
+          college: 1,
           leetcodeProfileID: 1,
           leetcodeProfile: 1,
           createdAt: 1,
@@ -262,7 +277,13 @@ router.post('/bulk-upsert', async (req, res) => {
     };
 
     for (const user of users) {
-      const { name, leetcodeProfile, leetcodeProfileID } = user;
+      let { name, college, leetcodeProfile, leetcodeProfileID } = user;
+
+      // Trim inputs
+      name = name ? name.trim() : name;
+      college = college ? college.trim() : '';
+      leetcodeProfile = leetcodeProfile ? leetcodeProfile.trim() : leetcodeProfile;
+      leetcodeProfileID = leetcodeProfileID ? leetcodeProfileID.trim() : leetcodeProfileID;
 
       // Basic validation
       if (!name || !leetcodeProfile || !leetcodeProfileID) {
@@ -288,6 +309,7 @@ router.post('/bulk-upsert', async (req, res) => {
         if (existingUser) {
           // Update
           existingUser.name = name;
+          if (college) existingUser.college = college;
           existingUser.leetcodeProfile = leetcodeProfile;
           existingUser.leetcodeProfileID = leetcodeProfileID; // Update ID in case it was found by URL and ID is different
           await existingUser.save();
@@ -298,6 +320,7 @@ router.post('/bulk-upsert', async (req, res) => {
           // Create
           const newUser = new User({
             name,
+            college: college || '',
             leetcodeProfile,
             leetcodeProfileID
           });

@@ -1,13 +1,24 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useParams } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../services/api';
 
 const StudentList = () => {
+  const { collegeId } = useParams();
   const [students, setStudents] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+
+  // Map URL param to college name
+  const getSelectedCollege = () => {
+    if (!collegeId || collegeId === 'all') return 'All';
+    if (collegeId === 'ru') return 'RU University';
+    if (collegeId === 'su') return 'SU University';
+    return 'All';
+  };
+
+  const selectedCollege = getSelectedCollege();
 
   useEffect(() => {
     const fetchStudents = async () => {
@@ -15,7 +26,16 @@ const StudentList = () => {
         setLoading(true);
         const result = await api.getUsers();
         if (result.success) {
-          setStudents(result.data);
+          // Sort students by totalSolved in descending order
+          const sortedStudents = result.data.sort((a, b) => (b.totalSolved || 0) - (a.totalSolved || 0));
+          
+          // Assign internal rank based on the sorted order
+          const rankedStudents = sortedStudents.map((student, index) => ({
+            ...student,
+            internalRank: index + 1
+          }));
+          
+          setStudents(rankedStudents);
         } else {
           throw new Error(result.message || 'Failed to fetch students');
         }
@@ -34,10 +54,16 @@ const StudentList = () => {
     return 'from-gray-600 to-gray-800';
   };
 
-  const filteredStudents = students.filter(student =>
-    student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    student.leetcodeProfileID.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const filteredStudents = students.filter(student => {
+    // Search Filter
+    const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      student.leetcodeProfileID.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // College Filter
+    const matchesCollege = selectedCollege === 'All' || student.college === selectedCollege;
+
+    return matchesSearch && matchesCollege;
+  });
 
   // Animation Variants
   const containerVariants = {
@@ -109,6 +135,21 @@ const StudentList = () => {
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 to-black py-12 px-4 sm:px-6 lg:px-8">
       <div className="max-w-7xl mx-auto">
+        {/* Back Button */}
+        <div className="mb-8">
+          <Link 
+            to="/"
+            className="inline-flex items-center text-gray-400 hover:text-white transition-colors duration-200 group"
+          >
+            <span className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center mr-3 group-hover:bg-purple-500/20 group-hover:text-purple-400 transition-all">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+              </svg>
+            </span>
+            <span className="font-medium">Back to Dashboard</span>
+          </Link>
+        </div>
+
         {/* Header Section */}
         <motion.div 
           className="text-center mb-16 relative"
@@ -176,6 +217,7 @@ const StudentList = () => {
               >
                 <Link
                   to={`/student/${student._id}`}
+                  state={{ from: 'studentList' }}
                   className="group relative block bg-gray-800/40 border border-gray-700/50 rounded-2xl overflow-hidden hover:border-purple-500/50 transition-all duration-300 hover:shadow-[0_0_30px_rgba(168,85,247,0.15)] hover:-translate-y-1 h-full"
                 >
                   {/* Card Background Gradient */}
@@ -196,11 +238,10 @@ const StudentList = () => {
                             {student.name.charAt(0).toUpperCase()}
                           </div>
                         )}
-                        {student.ranking > 0 && student.ranking < 100000 && (
-                          <div className="absolute -bottom-1 -right-1 bg-yellow-500/90 text-black text-[10px] font-bold px-1.5 py-0.5 rounded-full shadow-sm border border-yellow-400">
-                            Top
-                          </div>
-                        )}
+                        {/* Internal Rank Badge */}
+                        <div className="absolute -top-2 -right-2 bg-gradient-to-r from-purple-600 to-blue-600 text-white text-[10px] font-black px-2 py-1 rounded-full shadow-lg border border-white/20 z-10">
+                          #{student.internalRank}
+                        </div>
                       </div>
                       
                       <div className="min-w-0 flex-1">
@@ -225,26 +266,52 @@ const StudentList = () => {
                     </div>
 
                     {/* Stats Row */}
-                    <div className="grid grid-cols-2 gap-3 mb-6">
-                      <div className="bg-white/5 rounded-xl p-3 text-center border border-white/5">
-                        <div className="text-xs text-gray-400 mb-1 uppercase tracking-wider">Solved</div>
-                        <div className="text-xl font-black text-white group-hover:text-purple-300 transition-colors">
+                    <div className="grid grid-cols-2 gap-3 mb-4">
+                      <div className="bg-white/5 rounded-xl p-2.5 text-center border border-white/5 group-hover:bg-white/10 transition-colors flex flex-col justify-center">
+                        <div className="text-[10px] text-gray-400 mb-0.5 uppercase tracking-wider font-medium">Solved</div>
+                        <div className="text-xl font-black text-white group-hover:text-purple-300 transition-colors leading-tight">
                           {student.totalSolved || 0}
                         </div>
+                        {student.ranking > 0 && (
+                          <div className="text-[10px] text-gray-500 font-mono mt-0.5">
+                            #{student.ranking.toLocaleString()}
+                          </div>
+                        )}
                       </div>
-                      <div className="bg-white/5 rounded-xl p-3 text-center border border-white/5">
-                        <div className="text-xs text-gray-400 mb-1 uppercase tracking-wider">Rank</div>
-                        <div className="text-sm font-bold text-white truncate group-hover:text-blue-300 transition-colors">
-                          {student.ranking ? `#${student.ranking.toLocaleString()}` : 'N/A'}
+                      <div className="bg-white/5 rounded-xl p-2.5 text-center border border-white/5 group-hover:bg-white/10 transition-colors flex flex-col justify-center">
+                        <div className="text-[10px] text-gray-400 mb-0.5 uppercase tracking-wider font-medium">Acceptance</div>
+                        <div className="text-xl font-black text-white group-hover:text-green-300 transition-colors leading-tight">
+                          {student.acceptanceRate ? `${student.acceptanceRate.toFixed(1)}%` : 'N/A'}
                         </div>
                       </div>
                     </div>
 
-                    {/* Difficulty Bars (Mini Visualization) */}
-                    <div className="flex h-1.5 w-full rounded-full overflow-hidden bg-gray-700/50 mb-6">
-                      <div style={{ width: `${(student.easySolved / (student.totalSolved || 1)) * 100}%` }} className="bg-emerald-500/70"></div>
-                      <div style={{ width: `${(student.mediumSolved / (student.totalSolved || 1)) * 100}%` }} className="bg-yellow-500/70"></div>
-                      <div style={{ width: `${(student.hardSolved / (student.totalSolved || 1)) * 100}%` }} className="bg-red-500/70"></div>
+                    {/* Detailed Breakdown */}
+                    <div className="bg-white/5 rounded-xl p-3 border border-white/5 mb-6 group-hover:bg-white/[0.07] transition-colors">
+                      <div className="flex h-1.5 w-full rounded-full overflow-hidden bg-gray-700/50 mb-3">
+                        <div style={{ width: `${(student.easySolved / (student.totalSolved || 1)) * 100}%` }} className="bg-emerald-500/80 shadow-[0_0_10px_rgba(16,185,129,0.3)]"></div>
+                        <div style={{ width: `${(student.mediumSolved / (student.totalSolved || 1)) * 100}%` }} className="bg-yellow-500/80 shadow-[0_0_10px_rgba(234,179,8,0.3)]"></div>
+                        {student.hardSolved > 0 && (
+                          <div style={{ width: `${(student.hardSolved / (student.totalSolved || 1)) * 100}%` }} className="bg-red-500/80 shadow-[0_0_10px_rgba(239,68,68,0.3)]"></div>
+                        )}
+                      </div>
+
+                      <div className={`grid ${student.hardSolved > 0 ? 'grid-cols-3' : 'grid-cols-2'} gap-2`}>
+                        <div className="text-center">
+                          <div className="text-emerald-400 font-bold text-sm">{student.easySolved || 0}</div>
+                          <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Easy</div>
+                        </div>
+                        <div className="text-center">
+                          <div className="text-yellow-400 font-bold text-sm">{student.mediumSolved || 0}</div>
+                          <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Med</div>
+                        </div>
+                        {student.hardSolved > 0 && (
+                          <div className="text-center">
+                            <div className="text-red-400 font-bold text-sm">{student.hardSolved}</div>
+                            <div className="text-[10px] text-gray-500 font-medium uppercase tracking-wide">Hard</div>
+                          </div>
+                        )}
+                      </div>
                     </div>
 
                     {/* Footer */}
@@ -256,14 +323,13 @@ const StudentList = () => {
                             Rating: {Math.round(student.contestRating)}
                           </span>
                         ) : student.reputation > 0 ? (
-                          <span className="text-blue-400/90 font-medium flex items-center gap-1.5" title="LeedCode Reputation">
+                          <span className="text-blue-400/90 font-medium flex items-center gap-1.5" title="LeetCode Reputation">
                             <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 20 20"><path d="M2 10.5a1.5 1.5 0 113 0v6a1.5 1.5 0 01-3 0v-6zM6 10.333v5.43a2 2 0 001.106 1.79l.05.025A4 4 0 008.943 18h5.416a2 2 0 001.962-1.608l1.2-6A2 2 0 0015.56 8H12V4a2 2 0 00-2-2 1 1 0 00-1 1v.667a4 4 0 01-.8 2.4L6.8 7.933a4 4 0 00-.8 2.4z" /></svg>
                             Reputation: {student.reputation}
                           </span>
                         ) : (
-                          <span className="text-gray-400 font-medium flex items-center gap-1.5" title="Acceptance Rate">
-                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                            Acc. Rate: {student.acceptanceRate ? student.acceptanceRate.toFixed(1) : 0}%
+                          <span className="text-gray-500/60 font-medium flex items-center gap-1.5">
+                            Active Student
                           </span>
                         )}
                       </div>

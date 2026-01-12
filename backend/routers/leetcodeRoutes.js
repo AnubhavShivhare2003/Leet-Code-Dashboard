@@ -341,6 +341,8 @@ async function updateStaleUsers(limit = 5) {
 leetcodeRoutes.get('/cron-update', async (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 5;
+    console.log(`[Cron Job] Starting incremental update for ${limit} users...`);
+    
     const result = await updateStaleUsers(limit);
     
     // Calculate cycle time in hours
@@ -348,7 +350,7 @@ leetcodeRoutes.get('/cron-update', async (req, res) => {
     const requestsPerHour = (60 / 5) * limit; // Assuming 5 min interval
     const cycleTimeHours = totalUsers > 0 ? (totalUsers / requestsPerHour).toFixed(2) : 0;
 
-     console.log(`[Cron Job] Success! Updated: ${result.updated}, Failed: ${result.failed}, Total Users: ${totalUsers}`);
+    console.log(`[Cron Job] Success! Updated: ${result.updated}, Failed: ${result.failed}, Total Users: ${totalUsers}`);
 
     res.json({
       success: true,
@@ -361,6 +363,7 @@ leetcodeRoutes.get('/cron-update', async (req, res) => {
       data: result
     });
   } catch (error) {
+    console.error(`[Cron Job] Failed: ${error.message}`);
     res.status(500).json({
       success: false,
       message: 'Incremental update failed',
@@ -432,14 +435,43 @@ leetcodeRoutes.get('/user/:username', async (req, res) => {
 leetcodeRoutes.get('/leaderboard', async (req, res) => {
   try {
     console.log('Leaderboard endpoint hit');
+    
+    // Query Params
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const sortBy = req.query.sortBy || 'total'; // 'total', 'yesterdaySubmissions', 'yesterdayQuestions'
+    const college = req.query.college || 'All';
+    const skip = (page - 1) * limit;
+
     // Calculate yesterday's timestamp at 00:00:00 UTC
     const now = new Date();
     // Use UTC date to match LeetCode's submission calendar timestamps
     const todayUTC = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
     const yesterdayTimestamp = Math.floor(todayUTC.getTime() / 1000) - 86400;
-    const yesterdayKey = yesterdayTimestamp.toString();
 
-    const leaderboardData = await User.aggregate([
+    // Build Match Stage
+    const matchStage = { leetcodeProfileID: { $ne: null } };
+    if (college !== 'All') {
+      matchStage.college = college;
+    }
+
+    // Build Sort Stage
+    let sortStage = {};
+    switch (sortBy) {
+      case 'yesterdaySubmissions':
+        sortStage = { 'leetcodeInfo.yesterdaySubmissions': -1, 'leetcodeInfo.totalSolved': -1 };
+        break;
+      case 'yesterdayQuestions':
+        sortStage = { 'leetcodeInfo.yesterdayQuestionsSolved': -1, 'leetcodeInfo.totalSolved': -1 };
+        break;
+      case 'total':
+      default:
+        sortStage = { 'leetcodeInfo.totalSolved': -1, 'leetcodeInfo.ranking': 1 };
+        break;
+    }
+
+    const aggregationPipeline = [
+      { $match: matchStage },
       {
         $lookup: {
           from: 'leetcodes',
@@ -454,93 +486,50 @@ leetcodeRoutes.get('/leaderboard', async (req, res) => {
           preserveNullAndEmptyArrays: true
         }
       },
+      { $sort: sortStage },
       {
-        $project: {
-          _id: 1,
-          name: 1,
-          leetcodeProfile: 1,
-          leetcodeProfileID: 1,
-          totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
-          ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] },
-          submissionCalendar: { $ifNull: ['$leetcodeInfo.submissionCalendar', {}] },
-          recentSubmissions: { $ifNull: ['$leetcodeInfo.recentSubmissions', []] },
-          yesterdayQuestionsSolved: { $ifNull: ['$leetcodeInfo.yesterdayQuestionsSolved', 0] },
-          yesterdaySubmissions: { $ifNull: ['$leetcodeInfo.yesterdaySubmissions', 0] },
-          leetcodeData: {
-            totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
-            ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] },
-            easySolved: { $ifNull: ['$leetcodeInfo.easySolved', 0] },
-            mediumSolved: { $ifNull: ['$leetcodeInfo.mediumSolved', 0] },
-            hardSolved: { $ifNull: ['$leetcodeInfo.hardSolved', 0] }
-          }
-        }
-      }
-    ]);
-
-    // Process data to extract yesterday's statistics
-    console.log(`Processing leaderboard for yesterdayKey: ${yesterdayKey}`);
-    const processedData = leaderboardData.map(student => {
-      const calendar = student.submissionCalendar || {};
-      const submissions = student.recentSubmissions || [];
-      
-      // Helper to get value from Map or plain object
-      const getVal = (obj, key) => {
-        if (!obj) return 0;
-        if (typeof obj.get === 'function') {
-            try { return obj.get(key) || 0; } catch(e) { return obj[key] || 0; }
-        }
-        return obj[key] || 0;
-      };
-
-      // 1. Calculate Yesterday Submissions
-      // Use pre-calculated value from DB if available
-      let yesterdaySubmissions = student.yesterdaySubmissions || 0;
-      
-      // Fallback: recalculate if it's 0 but we have calendar (just in case)
-      if (yesterdaySubmissions === 0) {
-        yesterdaySubmissions = parseInt(getVal(calendar, yesterdayKey)) || 0;
-      }
-
-      // 2. Calculate Yesterday Questions Solved
-      // Use pre-calculated value from DB if available
-      let yesterdayQuestionsSolved = student.yesterdayQuestionsSolved || 0;
-      
-      // Fallback: recalculate if it's 0 but we have submissions (just in case)
-      if (yesterdayQuestionsSolved === 0) {
-          const todayTimestamp = yesterdayTimestamp + 86400;
-          const uniqueAcceptedYesterday = new Set();
-          submissions.forEach(sub => {
-            if (sub.timestamp >= yesterdayTimestamp && sub.timestamp < todayTimestamp) {
-              if (sub.statusDisplay === 'Accepted') {
-                uniqueAcceptedYesterday.add(sub.titleSlug || sub.title);
+        $facet: {
+          metadata: [{ $count: "total" }],
+          data: [
+            { $skip: skip },
+            { $limit: limit },
+            {
+              $project: {
+                _id: 1,
+                name: 1,
+                college: 1,
+                leetcodeProfile: 1,
+                leetcodeProfileID: 1,
+                totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
+                ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] },
+                yesterdayQuestionsSolved: { $ifNull: ['$leetcodeInfo.yesterdayQuestionsSolved', 0] },
+                yesterdaySubmissions: { $ifNull: ['$leetcodeInfo.yesterdaySubmissions', 0] },
               }
             }
-          });
-          yesterdayQuestionsSolved = uniqueAcceptedYesterday.size;
+          ]
+        }
       }
+    ];
 
-      return {
-        ...student,
-        yesterdaySubmissions,
-        yesterdayQuestionsSolved
-      };
-    });
-
-    // Default sort by totalSolved (frontend can re-sort)
-    processedData.sort((a, b) => {
-      if (b.totalSolved !== a.totalSolved) {
-        return b.totalSolved - a.totalSolved;
-      }
-      return a.ranking - b.ranking;
-    });
+    const result = await User.aggregate(aggregationPipeline);
+    
+    const data = result[0].data;
+    const total = result[0].metadata[0] ? result[0].metadata[0].total : 0;
+    const totalPages = Math.ceil(total / limit);
 
     res.json({
       status: 'success',
       message: 'Leaderboard data retrieved',
-      data: processedData,
+      data: data,
       meta: {
         yesterdayDate: new Date(yesterdayTimestamp * 1000).toISOString().split('T')[0],
-        yesterdayTimestamp: yesterdayTimestamp
+        yesterdayTimestamp: yesterdayTimestamp,
+        pagination: {
+          page,
+          limit,
+          total,
+          totalPages
+        }
       }
     });
     
