@@ -348,6 +348,8 @@ leetcodeRoutes.get('/cron-update', async (req, res) => {
     const requestsPerHour = (60 / 5) * limit; // Assuming 5 min interval
     const cycleTimeHours = totalUsers > 0 ? (totalUsers / requestsPerHour).toFixed(2) : 0;
 
+     console.log(`[Cron Job] Success! Updated: ${result.updated}, Failed: ${result.failed}, Total Users: ${totalUsers}`);
+
     res.json({
       success: true,
       message: 'Incremental update completed',
