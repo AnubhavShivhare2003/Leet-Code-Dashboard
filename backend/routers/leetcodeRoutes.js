@@ -1,9 +1,7 @@
 const { LeetCode } = require("leetcode-query");
 const express = require('express');
-const cron = require('node-cron');
 const LeetCodeModel = require('../models/leetcodeModel');
 const User = require('../models/userModel');
-const Metadata = require('../models/metadataModel');
 
 const leetcodeRoutes = express.Router();
 const leetcode = new LeetCode();
@@ -261,92 +259,122 @@ async function fetchLeetCodeUserData(username) {
   }
 }
 
-// Function to update all users' LeetCode data
-async function updateAllUsersLeetCodeData() {
+// Function to update a batch of users
+async function updateStaleUsers(limit = 5) {
   try {
-    
-    // Get all users from the database with a LeetCode profile
-    const users = await User.find({ leetcodeProfileID: { $ne: null, $exists: true } });
-    
-    if (users.length === 0) {
-      return { success: 0, failed: 0 };
+    // Find users with oldest lastUpdated timestamp or no timestamp
+    // We query User collection and join with LeetCodeModel to ensure we cover all users
+    // including those who might not have a LeetCodeModel entry yet.
+    const usersToUpdate = await User.aggregate([
+      {
+        $lookup: {
+          from: 'leetcodes',
+          localField: 'leetcodeProfileID',
+          foreignField: 'username',
+          as: 'leetcodeInfo'
+        }
+      },
+      {
+        $project: {
+          leetcodeProfileID: 1,
+          // If leetcodeInfo is empty or lastUpdated missing, use very old date (epoch 0)
+          lastUpdated: { 
+            $ifNull: [
+              { $arrayElemAt: ["$leetcodeInfo.lastUpdated", 0] }, 
+              new Date(0) 
+            ] 
+          }
+        }
+      },
+      { $sort: { lastUpdated: 1 } },
+      { $limit: limit }
+    ]);
+
+    if (usersToUpdate.length === 0) {
+      return { updated: 0, message: 'No users found in database' };
     }
 
     const results = [];
     const errors = [];
 
-    for (const user of users) {
+    for (const user of usersToUpdate) {
+      const username = user.leetcodeProfileID;
       try {
-        // Fetch LeetCode data using the leetcodeProfileID
-        const leetcodeData = await fetchLeetCodeUserData(user.leetcodeProfileID);
+        const leetcodeData = await fetchLeetCodeUserData(username);
         
-        // Save or update in LeetCode collection using a single operation
-        const updateResult = await LeetCodeModel.findOneAndUpdate(
-          { username: user.leetcodeProfileID },
+        await LeetCodeModel.findOneAndUpdate(
+          { username: username },
           leetcodeData,
           { upsert: true, new: false, setDefaultsOnInsert: true }
         );
 
-        results.push({
-          username: user.leetcodeProfileID,
-          status: updateResult ? 'updated' : 'created'
-        });
-
+        results.push(username);
       } catch (error) {
-        errors.push({
-          username: user.leetcodeProfileID,
-          error: error.message
-        });
+        errors.push({ username: username, error: error.message });
+        // Even if failed, update timestamp to push to back of queue so we don't get stuck
+        await LeetCodeModel.updateOne(
+          { username: username }, 
+          { $set: { lastUpdated: new Date() } },
+          { upsert: true } // Ensure it exists even if fetch failed
+        );
       }
     }
 
-    
-    // Update global last update timestamp in metadata
-    await Metadata.findOneAndUpdate(
-      { key: 'last_global_update' },
-      { value: new Date(), lastUpdated: new Date() },
-      { upsert: true }
-    );
-    
-    if (errors.length > 0) {
-      console.error('Errors during update:', errors);
-    }
+    // Get total user count for stats
+    const totalUsers = await User.countDocuments({ leetcodeProfileID: { $ne: null } });
 
-    return {
-      success: results.length,
-      failed: errors.length,
-      results,
+    return { 
+      updated: results.length, 
+      failed: errors.length, 
+      users: results,
+      totalUsers,
       errors: errors.length > 0 ? errors : undefined
     };
+
   } catch (error) {
-    console.error('Error in updateAllUsersLeetCodeData:', error);
+    console.error('Error in incremental update:', error);
     throw error;
   }
 }
 
-// Schedule automatic updates twice daily at 12:00 AM and 12:00 PM
-cron.schedule('0 0,12 * * *', async () => {
+// Endpoint for external cron service (Keep-Alive + Incremental Update)
+leetcodeRoutes.get('/cron-update', async (req, res) => {
   try {
-    const result = await updateAllUsersLeetCodeData();
+    const limit = parseInt(req.query.limit) || 5;
+    const result = await updateStaleUsers(limit);
+    
+    // Calculate cycle time in hours
+    const totalUsers = result.totalUsers || 0;
+    const requestsPerHour = (60 / 5) * limit; // Assuming 5 min interval
+    const cycleTimeHours = totalUsers > 0 ? (totalUsers / requestsPerHour).toFixed(2) : 0;
+
+    res.json({
+      success: true,
+      message: 'Incremental update completed',
+      stats: {
+        totalUsers,
+        batchSize: limit,
+        estimatedCycleTime: `${cycleTimeHours} hours`
+      },
+      data: result
+    });
   } catch (error) {
-    console.error('Error in scheduled update:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Incremental update failed',
+      error: error.message
+    });
   }
 });
 
 // Manual trigger endpoint for testing
 leetcodeRoutes.post('/update-all-now', async (req, res) => {
+  // This is now discouraged for production but kept for manual admin use
   try {
-    const result = await updateAllUsersLeetCodeData();
-    
-    res.json({
-      message: 'Manual update completed',
-      result
-    });
+    const result = await updateStaleUsers(132); // Try to update a large batch manually if needed
+    res.json({ message: 'Manual batch update completed', result });
   } catch (error) {
-    res.status(500).json({ 
-      error: 'Failed to update users',
-      details: error.message 
-    });
+    res.status(500).json({ error: 'Failed', details: error.message });
   }
 });
 
@@ -525,35 +553,16 @@ leetcodeRoutes.get('/leaderboard', async (req, res) => {
 
 // Health check endpoint
 leetcodeRoutes.get('/health', async (req, res) => {
-  const lastUpdate = await Metadata.findOne({ key: 'last_global_update' });
   res.json({ 
-    message: 'LeetCode cron service is running',
-    lastGlobalUpdate: lastUpdate ? lastUpdate.value : 'Never',
-    nextUpdate: 'Twice daily at 12:00 AM and 12:00 PM'
+    message: 'LeetCode service is running',
+    mode: 'incremental_updates',
+    updateInterval: 'Every 5 minutes (via external cron)'
   });
 });
 
-// Function to check and run update on startup if stale
-async function checkAndRunStartupUpdate() {
-  try {
-    const lastUpdate = await Metadata.findOne({ key: 'last_global_update' });
-    
-    const TWELVE_HOURS = 12 * 60 * 60 * 1000;
-    const now = new Date();
-    
-    if (!lastUpdate || (now - new Date(lastUpdate.value)) > TWELVE_HOURS) {
-      // Run in background without awaiting to not block startup
-      updateAllUsersLeetCodeData().catch(err => console.error('Startup update failed:', err));
-    }
-  } catch (error) {
-    console.error('Error during startup update check:', error);
-  }
-}
-
 module.exports = {
   router: leetcodeRoutes,
-  checkAndRunStartupUpdate,
-  updateAllUsersLeetCodeData
+  updateStaleUsers
 };
 
 

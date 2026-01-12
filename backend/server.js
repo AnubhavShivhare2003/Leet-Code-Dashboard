@@ -2,7 +2,7 @@ const express=require('express');
 const cors=require('cors');
 require('dotenv').config();
 const connectDB = require('./config/db');
-const { router: leetcodeRoutes, checkAndRunStartupUpdate } = require('./routers/leetcodeRoutes');
+const { router: leetcodeRoutes } = require('./routers/leetcodeRoutes');
 const userRoutes=require('./routers/userRoutes');
 
 
@@ -44,8 +44,6 @@ const PORT=process.env.PORT || 4000;
 connectDB().then(() => {
     app.listen(PORT,()=>{
         console.log(`Server running on port ${PORT}`);
-        // Run startup check for LeetCode data
-        checkAndRunStartupUpdate();
     });
 }).catch(err => {
     console.error('Failed to connect to database', err);

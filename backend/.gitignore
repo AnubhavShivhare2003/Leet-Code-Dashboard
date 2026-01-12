@@ -1,6 +1,7 @@
 node_modules/
 .env
 data.json
-test-leetcode-extraction.js
-test-leetcode.js
-test-leetcode2.js
+.DS_Store
+coverage/
+.vscode/
+

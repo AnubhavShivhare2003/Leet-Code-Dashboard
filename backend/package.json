@@ -12,12 +12,14 @@
   "author": "",
   "license": "ISC",
   "type": "commonjs",
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "dependencies": {
     "cors": "^2.8.5",
     "dotenv": "^17.2.3",
     "express": "^5.2.1",
     "leetcode-query": "^2.0.1",
-    "mongoose": "^9.0.2",
-    "node-cron": "^4.2.1"
+    "mongoose": "^9.0.2"
   }
 }
