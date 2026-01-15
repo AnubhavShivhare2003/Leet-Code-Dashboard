@@ -11,6 +11,54 @@ const StudentCard = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandAbout, setExpandAbout] = useState(false);
+  const leftColumnRef = React.useRef(null);
+  const [rightColumnMaxHeight, setRightColumnMaxHeight] = useState('500px'); // Default max height
+  const [submissionLimit, setSubmissionLimit] = useState(10); // Dynamic submission limit
+
+  useEffect(() => {
+    const updateHeight = () => {
+      if (leftColumnRef.current && window.innerWidth >= 1024) { // Only for lg screens
+        // Calculate available height for the list:
+        // Left Column Height - (Right Column Header + Padding)
+        // Right Column Header is roughly 50px, Padding is 32px (p-4 = 16px top + 16px bottom)
+        const leftHeight = leftColumnRef.current.clientHeight;
+        // Strict sync: Match left column height exactly
+        // Use a small minimum just to prevent collapse if left is empty (e.g. 200px)
+        const calculatedHeight = Math.max(200, leftHeight - 60); 
+        setRightColumnMaxHeight(`${calculatedHeight}px`);
+
+        // Calculate how many items fit (approx 45px per item, 2 columns)
+        // 45px covers title row + date row + padding + gap
+        const itemsPerColumn = Math.floor(calculatedHeight / 45);
+        const dynamicLimit = itemsPerColumn * 2;
+        // Ensure at least 10, but allow more if space permits
+        setSubmissionLimit(Math.max(10, dynamicLimit));
+      } else {
+        setRightColumnMaxHeight('500px'); // Default for mobile/tablet
+        setSubmissionLimit(10); // Default limit
+      }
+    };
+
+    // Use ResizeObserver to detect height changes in the left column (e.g., Show More/Less)
+    const observer = new ResizeObserver(() => {
+       window.requestAnimationFrame(updateHeight);
+    });
+
+    if (leftColumnRef.current) {
+      observer.observe(leftColumnRef.current);
+    }
+    
+    // Initial update
+    updateHeight();
+    
+    // Window resize listener for breakpoint changes
+    window.addEventListener('resize', updateHeight);
+
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', updateHeight);
+    };
+  }, [leetcodeData]); // Re-run when data loads/changes
 
   // Determine back path based on state
   const backPath = location.state?.from === 'leaderboard' 
@@ -174,6 +222,15 @@ const StudentCard = () => {
     );
   }
 
+  const hasBadges = leetcodeData.badges && leetcodeData.badges.length > 0;
+  const hasAbout = leetcodeData.aboutMe && leetcodeData.aboutMe.length > 0;
+  
+  // Calculate display count based on available space in left column
+  // Base count is 10, reduce if other widgets are present
+  // Logic to determine "Last X" label
+  // If we have lots of content in left column, we might show fewer items effectively
+  // but let's just make the list scrollable/dynamic
+  
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-black py-6 px-4 sm:px-6 lg:px-8 font-sans selection:bg-purple-500/30">
       <div className="max-w-6xl mx-auto">
@@ -303,10 +360,10 @@ const StudentCard = () => {
             </div>
 
             {/* Main Grid: Chart/Breakdown vs Recent */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
               
               {/* Left Column: Visuals (1/3) */}
-              <div className="space-y-4">
+              <div className="space-y-4 flex flex-col" ref={leftColumnRef}>
                 {/* Pie Chart & Breakdown Combined */}
                 <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                   <h3 className="text-xs font-bold text-white mb-3 flex items-center gap-2">
@@ -382,7 +439,7 @@ const StudentCard = () => {
                 </div>
 
                 {/* Badges */}
-                {leetcodeData.badges && leetcodeData.badges.length > 0 && (
+                {hasBadges && (
                   <div className="bg-white/5 rounded-xl p-4 border border-white/10">
                     <h3 className="text-xs font-bold text-white mb-2 flex items-center gap-2">
                       <span className="w-1 h-3 bg-yellow-500 rounded-full"></span>
@@ -404,7 +461,7 @@ const StudentCard = () => {
                 )}
                 
                 {/* About Me */}
-                {leetcodeData.aboutMe && (
+                {hasAbout && (
                   <div 
                     className={`bg-white/5 rounded-xl p-4 border border-white/10 ${leetcodeData.aboutMe.length > 100 ? 'cursor-pointer hover:bg-white/10 transition-colors' : ''}`}
                     onClick={() => leetcodeData.aboutMe.length > 100 && setExpandAbout(!expandAbout)}
@@ -425,30 +482,42 @@ const StudentCard = () => {
               </div>
 
               {/* Right Column: Recent Submissions (2/3) */}
-              <div className="lg:col-span-2">
-                <div className="bg-white/5 rounded-xl p-4 border border-white/10 h-full">
-                  <h3 className="text-xs font-bold text-white mb-3 flex justify-between items-center">
+              <div className="lg:col-span-2 h-full flex flex-col">
+                <div className="bg-white/5 rounded-xl p-4 border border-white/10 h-full flex flex-col">
+                  <h3 className="text-xs font-bold text-white mb-3 flex justify-between items-center flex-shrink-0">
                     <span className="flex items-center gap-2">
                       <span className="w-1 h-3 bg-blue-500 rounded-full"></span>
                       Recent Activity
                     </span>
-                    <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-gray-400">Last 10</span>
+                    <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded text-gray-400">
+                      Last {Math.min(leetcodeData.recentSubmissions?.length || 0, submissionLimit)}
+                    </span>
                   </h3>
                   
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-                    {leetcodeData.recentSubmissions && leetcodeData.recentSubmissions.slice(0, 10).map((sub, idx) => (
-                      <div key={idx} className="flex justify-between items-center text-xs border-b border-white/5 pb-2 last:border-0 md:last:border-b md:nth-last-2:border-0 md:nth-last-1:border-0">
-                        <div className="truncate pr-2 flex-1">
-                          <div className="text-gray-300 truncate hover:text-white transition-colors font-medium" title={sub.title}>{sub.title}</div>
-                          <div className="text-[10px] text-gray-600">{new Date(sub.timestamp * 1000).toLocaleDateString()}</div>
+                  <div 
+                    className="flex-1 overflow-y-auto pr-2 custom-scrollbar transition-all duration-300 ease-in-out" 
+                    style={{ height: rightColumnMaxHeight }}
+                  >
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+                      {leetcodeData.recentSubmissions && leetcodeData.recentSubmissions.slice(0, submissionLimit).map((sub, idx) => (
+                        <div key={idx} className="flex justify-between items-center text-xs border-b border-white/5 pb-2 last:border-0 md:last:border-b md:nth-last-2:border-0 md:nth-last-1:border-0">
+                          <div className="truncate pr-2 flex-1">
+                            <div className="text-gray-300 truncate hover:text-white transition-colors font-medium" title={sub.title}>{sub.title}</div>
+                            <div className="text-[10px] text-gray-600">{new Date(sub.timestamp * 1000).toLocaleDateString()}</div>
+                          </div>
+                          <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${
+                            sub.statusDisplay === 'Accepted' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                          }`}>
+                            {sub.statusDisplay}
+                          </span>
                         </div>
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium whitespace-nowrap ${
-                          sub.statusDisplay === 'Accepted' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                        }`}>
-                          {sub.statusDisplay}
-                        </span>
-                      </div>
-                    ))}
+                      ))}
+                      {(!leetcodeData.recentSubmissions || leetcodeData.recentSubmissions.length === 0) && (
+                        <div className="col-span-2 text-center py-10 text-gray-500">
+                          No recent submissions found
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               </div>

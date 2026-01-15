@@ -9,6 +9,10 @@ const StudentList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [totalStudents, setTotalStudents] = useState(0);
 
   // Map URL param to college name
   const getSelectedCollege = () => {
@@ -20,50 +24,67 @@ const StudentList = () => {
 
   const selectedCollege = getSelectedCollege();
 
+  // Debounce search term
   useEffect(() => {
-    const fetchStudents = async () => {
-      try {
-        setLoading(true);
-        const result = await api.getUsers();
-        if (result.success) {
-          // Sort students by totalSolved in descending order
-          const sortedStudents = result.data.sort((a, b) => (b.totalSolved || 0) - (a.totalSolved || 0));
-          
-          // Assign internal rank based on the sorted order
-          const rankedStudents = sortedStudents.map((student, index) => ({
-            ...student,
-            internalRank: index + 1
-          }));
-          
-          setStudents(rankedStudents);
-        } else {
-          throw new Error(result.message || 'Failed to fetch students');
-        }
-      } catch (err) {
-        setError(err.message);
-        console.error('Error fetching students:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+    const timer = setTimeout(() => {
+      setPage(1);
+      fetchStudents(1, true);
+    }, 500);
 
-    fetchStudents();
-  }, []);
+    return () => clearTimeout(timer);
+  }, [searchTerm, selectedCollege]);
+
+  const fetchStudents = async (pageNum, reset = false) => {
+    try {
+      if (pageNum === 1) setLoading(true);
+      
+      const result = await api.getLeaderboard({
+        page: pageNum,
+        limit: 24,
+        sortBy: 'total',
+        college: selectedCollege,
+        search: searchTerm
+      });
+
+      if (result.status === 'success') {
+        const newStudents = result.data.map((student, index) => ({
+          ...student,
+          internalRank: (pageNum - 1) * 24 + index + 1
+        }));
+
+        if (reset) {
+          setStudents(newStudents);
+        } else {
+          setStudents(prev => [...prev, ...newStudents]);
+        }
+        
+        setHasMore(result.meta.pagination.page < result.meta.pagination.totalPages);
+        setTotalStudents(result.meta.pagination.total);
+      } else {
+        throw new Error(result.message || 'Failed to fetch students');
+      }
+    } catch (err) {
+      setError(err.message);
+      console.error('Error fetching students:', err);
+    } finally {
+      setLoading(false);
+      setIsFetchingMore(false);
+    }
+  };
+
+  const handleLoadMore = () => {
+    if (!hasMore || isFetchingMore) return;
+    setIsFetchingMore(true);
+    setPage(prev => prev + 1);
+    fetchStudents(page + 1, false);
+  };
+
 
   const getColorTheme = (index) => {
     return 'from-gray-600 to-gray-800';
   };
 
-  const filteredStudents = students.filter(student => {
-    // Search Filter
-    const matchesSearch = student.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      student.leetcodeProfileID.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    // College Filter
-    const matchesCollege = selectedCollege === 'All' || student.college === selectedCollege;
-
-    return matchesSearch && matchesCollege;
-  });
+  const filteredStudents = students;
 
   // Animation Variants
   const containerVariants = {
@@ -200,20 +221,15 @@ const StudentList = () => {
           initial="hidden"
           animate="visible"
         >
-          <AnimatePresence>
+          <AnimatePresence mode="popLayout">
             {filteredStudents.map((student) => (
               <motion.div
                 key={student._id}
                 variants={itemVariants}
                 initial="hidden"
                 whileInView="visible"
-                whileHover={{ 
-                  scale: 1.02,
-                  transition: { duration: 0.2 }
-                }}
-                whileTap={{ scale: 0.98 }}
                 viewport={{ once: true, margin: "0px" }}
-                style={{ willChange: "transform, opacity" }}
+                layout
               >
                 <Link
                   to={`/student/${student._id}`}
@@ -343,6 +359,26 @@ const StudentList = () => {
             ))}
           </AnimatePresence>
         </motion.div>
+
+        {/* Load More Button */}
+        {hasMore && (
+          <div className="mt-12 flex justify-center">
+            <button
+              onClick={handleLoadMore}
+              disabled={isFetchingMore}
+              className="px-8 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-full font-bold shadow-lg transition-all duration-300 transform hover:-translate-y-1 flex items-center space-x-2"
+            >
+              {isFetchingMore ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
+                  <span>Loading...</span>
+                </>
+              ) : (
+                <span>Load More Students</span>
+              )}
+            </button>
+          </div>
+        )}
 
         {filteredStudents.length === 0 && !loading && (
           <motion.div 

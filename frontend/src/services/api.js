@@ -29,13 +29,14 @@ export const api = {
   },
 
   // LeetCode API
-  getLeaderboard: async ({ page = 1, limit = 20, sortBy = 'total', college = 'All' } = {}) => {
+  getLeaderboard: async ({ page = 1, limit = 20, sortBy = 'total', college = 'All', search = '' } = {}) => {
     try {
       const queryParams = new URLSearchParams({
         page,
         limit,
         sortBy,
-        college
+        college,
+        search
       });
       const response = await fetch(`${API_BASE_URL}/leetcode/leaderboard?${queryParams}`);
       if (!response.ok) {

@@ -168,7 +168,58 @@ async function fetchLeetCodeUserData(username) {
       recentSubmissions = userProfile.recentSubmissions;
     }
 
-    const formattedSubmissions = recentSubmissions.slice(0, 20).map(sub => ({
+    // Attempt to fetch more recent submissions to exceed the 20 limit
+    try {
+      // 1. Try library method if available
+      if (typeof leetcode.recent_submissions === 'function') {
+        const extraSubmissions = await leetcode.recent_submissions(username, 50);
+        if (Array.isArray(extraSubmissions) && extraSubmissions.length > 0) {
+          recentSubmissions = [...recentSubmissions, ...extraSubmissions];
+        }
+      }
+      
+      // 2. Try raw GraphQL for recentAcSubmissionList (gets older accepted submissions)
+      if (leetcode.graphql) {
+         const queryObj = {
+             query: `
+             query recentAcSubmissions($username: String!, $limit: Int) {
+                 recentAcSubmissionList(username: $username, limit: $limit) {
+                     title
+                     titleSlug
+                     timestamp
+                     statusDisplay
+                     lang
+                 }
+             }
+             `,
+             variables: { username, limit: 50 }
+         };
+         const result = await leetcode.graphql(queryObj);
+         if (result.data && result.data.recentAcSubmissionList) {
+             recentSubmissions = [...recentSubmissions, ...result.data.recentAcSubmissionList];
+         }
+      }
+    } catch (e) {
+      // console.log('Optional extra submissions fetch failed:', e.message);
+    }
+
+    // Deduplicate and sort submissions
+    const uniqueSubmissions = [];
+    const seenSubmission = new Set();
+    
+    // Sort by timestamp desc
+    recentSubmissions.sort((a, b) => Number(b.timestamp) - Number(a.timestamp));
+    
+    for (const sub of recentSubmissions) {
+        // Create unique key based on timestamp and title
+        const key = `${sub.timestamp}-${sub.titleSlug}`;
+        if (!seenSubmission.has(key)) {
+            seenSubmission.add(key);
+            uniqueSubmissions.push(sub);
+        }
+    }
+
+    const formattedSubmissions = uniqueSubmissions.slice(0, 100).map(sub => ({
       title: sub.title || '',
       titleSlug: sub.titleSlug || '',
       timestamp: Number(sub.timestamp) || 0,
@@ -178,6 +229,7 @@ async function fetchLeetCodeUserData(username) {
 
     // Calculate unique questions solved yesterday from recent submissions
     const uniqueAcceptedYesterday = new Set();
+    const uniqueAcceptedToday = new Set();
     let yesterdaySubmissions = 0;
     
     // Check submission calendar for submission count (more accurate for total count)
@@ -192,13 +244,21 @@ async function fetchLeetCodeUserData(username) {
     }
 
     formattedSubmissions.forEach(sub => {
+      // Yesterday's questions
       if (sub.timestamp >= yesterdayTimestamp && sub.timestamp < todayTimestamp) {
         if (sub.statusDisplay === 'Accepted') {
           uniqueAcceptedYesterday.add(sub.titleSlug || sub.title);
         }
       }
+      // Today's questions
+      if (sub.timestamp >= todayTimestamp) {
+        if (sub.statusDisplay === 'Accepted') {
+          uniqueAcceptedToday.add(sub.titleSlug || sub.title);
+        }
+      }
     });
     const yesterdayQuestionsSolved = uniqueAcceptedYesterday.size;
+    const todayQuestionsSolved = uniqueAcceptedToday.size;
 
     // Points calculation (example: 10 points for hard, 5 for medium, 2 for easy)
     const points = (hardSolved * 10) + (mediumSolved * 5) + (easySolved * 2);
@@ -249,6 +309,7 @@ async function fetchLeetCodeUserData(username) {
       // Recent submissions
       recentSubmissions: formattedSubmissions,
       yesterdayQuestionsSolved: yesterdayQuestionsSolved,
+      todayQuestionsSolved: todayQuestionsSolved,
       yesterdaySubmissions: yesterdaySubmissions,
       
       lastUpdated: new Date()
@@ -441,6 +502,7 @@ leetcodeRoutes.get('/leaderboard', async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
     const sortBy = req.query.sortBy || 'total'; // 'total', 'yesterdaySubmissions', 'yesterdayQuestions'
     const college = req.query.college || 'All';
+    const search = req.query.search || '';
     const skip = (page - 1) * limit;
 
     // Calculate yesterday's timestamp at 00:00:00 UTC
@@ -454,6 +516,14 @@ leetcodeRoutes.get('/leaderboard', async (req, res) => {
     if (college !== 'All') {
       matchStage.college = college;
     }
+    
+    // Add Search Filter
+    if (search) {
+      matchStage.$or = [
+        { name: { $regex: search, $options: 'i' } },
+        { leetcodeProfileID: { $regex: search, $options: 'i' } }
+      ];
+    }
 
     // Build Sort Stage
     let sortStage = {};
@@ -463,6 +533,9 @@ leetcodeRoutes.get('/leaderboard', async (req, res) => {
         break;
       case 'yesterdayQuestions':
         sortStage = { 'leetcodeInfo.yesterdayQuestionsSolved': -1, 'leetcodeInfo.totalSolved': -1 };
+        break;
+      case 'todayQuestions':
+        sortStage = { 'leetcodeInfo.todayQuestionsSolved': -1, 'leetcodeInfo.totalSolved': -1 };
         break;
       case 'total':
       default:
@@ -500,9 +573,19 @@ leetcodeRoutes.get('/leaderboard', async (req, res) => {
                 college: 1,
                 leetcodeProfile: 1,
                 leetcodeProfileID: 1,
+                userAvatar: { $ifNull: ['$leetcodeInfo.userAvatar', '$userAvatar'] },
+                countryName: { $ifNull: ['$leetcodeInfo.countryName', ''] },
+                school: { $ifNull: ['$leetcodeInfo.school', ''] },
                 totalSolved: { $ifNull: ['$leetcodeInfo.totalSolved', 0] },
                 ranking: { $ifNull: ['$leetcodeInfo.ranking', 2147483647] },
+                acceptanceRate: { $ifNull: ['$leetcodeInfo.acceptanceRate', 0] },
+                easySolved: { $ifNull: ['$leetcodeInfo.easySolved', 0] },
+                mediumSolved: { $ifNull: ['$leetcodeInfo.mediumSolved', 0] },
+                hardSolved: { $ifNull: ['$leetcodeInfo.hardSolved', 0] },
+                contestRating: { $ifNull: ['$leetcodeInfo.contestRating', 0] },
+                reputation: { $ifNull: ['$leetcodeInfo.reputation', 0] },
                 yesterdayQuestionsSolved: { $ifNull: ['$leetcodeInfo.yesterdayQuestionsSolved', 0] },
+                todayQuestionsSolved: { $ifNull: ['$leetcodeInfo.todayQuestionsSolved', 0] },
                 yesterdaySubmissions: { $ifNull: ['$leetcodeInfo.yesterdaySubmissions', 0] },
               }
             }

@@ -141,6 +141,10 @@ const leetcodeSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  todayQuestionsSolved: {
+    type: Number,
+    default: 0
+  },
   yesterdaySubmissions: {
     type: Number,
     default: 0

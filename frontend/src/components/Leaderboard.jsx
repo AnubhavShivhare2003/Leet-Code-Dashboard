@@ -98,6 +98,29 @@ const FilterDropdown = ({ options, value, onChange, icon: Icon, minWidth = "min-
   );
 };
 
+const StudentAvatar = ({ url, name, className = "w-12 h-12", iconSize = "w-6 h-6" }) => {
+  const [imageError, setImageError] = useState(false);
+
+  if (url && !imageError) {
+    return (
+      <img 
+        src={url} 
+        alt={name} 
+        className={`${className} rounded-full object-cover shadow-xl group-hover:scale-110 transition-transform duration-300`}
+        onError={() => setImageError(true)}
+      />
+    );
+  }
+
+  return (
+    <div className={`${className} bg-gradient-to-br from-purple-600 to-blue-600 rounded-full flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform duration-300`}>
+      <svg className={`${iconSize} text-white`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+      </svg>
+    </div>
+  );
+};
+
 const Leaderboard = () => {
   const [leaderboardData, setLeaderboardData] = useState([]);
   const [meta, setMeta] = useState(null);
@@ -117,6 +140,7 @@ const Leaderboard = () => {
 
   const sortOptions = [
     { value: 'total', label: 'Total Solved' },
+    { value: 'todayQuestions', label: 'Questions (Today)' },
     { value: 'yesterdaySubmissions', label: 'Submissions (Yesterday)' },
     { value: 'yesterdayQuestions', label: 'Questions (Yesterday)' }
   ];
@@ -217,6 +241,10 @@ const Leaderboard = () => {
           <p className="text-gray-400 text-lg max-w-2xl mx-auto">
             {sortBy === 'total' ? (
               'Ranked by total problems solved'
+            ) : sortBy === 'todayQuestions' ? (
+              <span>
+                 Ranked by questions solved <span className="block sm:inline font-semibold text-white/90 mt-1 sm:mt-0">Today</span>
+              </span>
             ) : (
               <span>
                 Ranked by {sortBy === 'yesterdaySubmissions' ? 'total submissions' : 'questions solved'} on
@@ -257,6 +285,7 @@ const Leaderboard = () => {
             <div className="col-span-5">Student</div>
             <div className="col-span-5 text-center">
               {sortBy === 'total' && 'Total Solved'}
+              {sortBy === 'todayQuestions' && 'Questions (Today)'}
               {sortBy === 'yesterdaySubmissions' && 'Submissions (Y)'}
               {sortBy === 'yesterdayQuestions' && 'Questions (Y)'}
             </div>
@@ -289,11 +318,12 @@ const Leaderboard = () => {
                           }`}>
                             {index + 1}
                           </div>
-                          <div className="w-10 h-10 bg-gradient-to-br from-purple-600 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg group-hover:scale-110 transition-transform duration-300">
-                            <span className="text-white font-bold text-xs uppercase">
-                              {student.name.split(' ').map(n => n[0]).join('')}
-                            </span>
-                          </div>
+                          <StudentAvatar 
+                            url={student.userAvatar} 
+                            name={student.name} 
+                            className="w-10 h-10 flex-shrink-0" 
+                            iconSize="w-5 h-5" 
+                          />
                           <div className="min-w-0 flex-1">
                             <div className="font-bold text-white text-sm truncate group-hover:text-purple-400 transition-colors">{student.name}</div>
                             <div className="text-xs text-gray-500 truncate font-mono">@{student.leetcodeProfileID}</div>
@@ -304,6 +334,11 @@ const Leaderboard = () => {
                             {sortBy === 'total' && (
                               <div className="text-base font-black leading-tight text-purple-400 whitespace-nowrap">
                                 {student.totalSolved} <span className="text-[8px] uppercase tracking-tighter ml-1">Total</span>
+                              </div>
+                            )}
+                            {sortBy === 'todayQuestions' && (
+                              <div className="text-base font-black leading-tight text-pink-400 whitespace-nowrap">
+                                {student.todayQuestionsSolved} <span className="text-[8px] uppercase tracking-tighter ml-1">Questions (T)</span>
                               </div>
                             )}
                             {sortBy === 'yesterdaySubmissions' && (
@@ -335,11 +370,12 @@ const Leaderboard = () => {
                     
                     <div className="hidden lg:flex col-span-5 items-center">
                       <div className="flex items-center space-x-4">
-                        <div className="w-12 h-12 bg-gradient-to-br from-purple-600 to-blue-600 rounded-full flex items-center justify-center shadow-xl group-hover:scale-110 transition-transform duration-300">
-                          <span className="text-white font-bold text-sm uppercase">
-                            {student.name.split(' ').map(n => n[0]).join('')}
-                          </span>
-                        </div>
+                        <StudentAvatar 
+                          url={student.userAvatar} 
+                          name={student.name} 
+                          className="w-12 h-12" 
+                          iconSize="w-6 h-6" 
+                        />
                         <div>
                           <div className="font-bold text-white group-hover:text-purple-400 transition-colors duration-300">{student.name}</div>
                           <div className="text-sm text-gray-500 font-mono">@{student.leetcodeProfileID}</div>
@@ -356,6 +392,16 @@ const Leaderboard = () => {
                             </div>
                             <div className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mt-1">
                               Total Solved
+                            </div>
+                          </>
+                        )}
+                        {sortBy === 'todayQuestions' && (
+                          <>
+                            <div className="text-2xl font-black text-pink-400">
+                              {student.todayQuestionsSolved}
+                            </div>
+                            <div className="text-[10px] text-gray-500 uppercase font-bold tracking-widest mt-1">
+                              Questions (T)
                             </div>
                           </>
                         )}

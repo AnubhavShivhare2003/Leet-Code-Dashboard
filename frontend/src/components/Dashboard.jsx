@@ -17,7 +17,7 @@ const Dashboard = () => {
         <div className="flex flex-col items-center space-y-8 max-w-4xl mx-auto w-full">
           <div className="text-center space-y-4">
             <h1 className="font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 text-6xl md:text-7xl mb-4 transition-all duration-700">
-             Leetcode Dashboard
+             LEETCODE Dashboard
             </h1>
             <p className="text-gray-400 text-xl md:text-2xl max-w-2xl mx-auto leading-relaxed">
               Select your university to view student progress and statistics
