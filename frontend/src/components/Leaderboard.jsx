@@ -1,7 +1,10 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Link } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { api } from '../services/api';
+
+const MAX_RENDERED_ITEMS = 200;
+const PAGE_LIMIT = 50;
 
 const FilterIcon = (props) => (
   <svg {...props} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
@@ -51,7 +54,7 @@ const FilterDropdown = ({ options, value, onChange, icon: Icon, minWidth = "min-
 
       <AnimatePresence>
         {isOpen && (
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, y: 10, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 10, scale: 0.95 }}
@@ -77,7 +80,7 @@ const FilterDropdown = ({ options, value, onChange, icon: Icon, minWidth = "min-
                      {option.label}
                   </span>
                   {value === option.value && (
-                    <motion.svg 
+                    <Motion.svg 
                       initial={{ scale: 0 }} 
                       animate={{ scale: 1 }} 
                       className="w-4 h-4 text-purple-400" 
@@ -86,12 +89,12 @@ const FilterDropdown = ({ options, value, onChange, icon: Icon, minWidth = "min-
                       viewBox="0 0 24 24"
                     >
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </motion.svg>
+                    </Motion.svg>
                   )}
                 </button>
               ))}
             </div>
-          </motion.div>
+          </Motion.div>
         )}
       </AnimatePresence>
     </div>
@@ -131,6 +134,8 @@ const Leaderboard = () => {
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
+  const [enableMotion, setEnableMotion] = useState(true);
+  const loadMoreRef = useRef(null);
 
   const collegeOptions = [
     { value: 'All', label: 'All Students' },
@@ -145,6 +150,9 @@ const Leaderboard = () => {
     { value: 'yesterdayQuestions', label: 'Questions (Yesterday)' }
   ];
 
+  // Throttling ref to prevent rapid-fire requests
+  const isThrottled = useRef(false);
+
   // Initial Load & Filter Change
   useEffect(() => {
     const fetchInitialData = async () => {
@@ -155,7 +163,7 @@ const Leaderboard = () => {
         // Fetch leaderboard data with pagination
         const data = await api.getLeaderboard({ 
           page: 1, 
-          limit: 20, 
+          limit: PAGE_LIMIT, // Match batch size
           sortBy, 
           college: selectedCollege 
         });
@@ -163,7 +171,7 @@ const Leaderboard = () => {
         if (data.status === 'success') {
           setLeaderboardData(data.data);
           setMeta(data.meta);
-          setHasMore(data.meta.pagination.page < data.meta.pagination.totalPages);
+          setHasMore(data.data.length === PAGE_LIMIT); // Ensure hasMore is based on data length
         } else {
           throw new Error(data.message || 'Failed to fetch leaderboard data');
         }
@@ -178,8 +186,16 @@ const Leaderboard = () => {
     fetchInitialData();
   }, [sortBy, selectedCollege]);
 
-  const handleLoadMore = async () => {
-    if (isFetchingMore || !hasMore) return;
+  useEffect(() => {
+    const timer = setTimeout(() => setEnableMotion(false), 2000);
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleLoadMore = useCallback(async () => {
+    if (isFetchingMore || !hasMore || isThrottled.current) return;
+    
+    // Set throttle
+    isThrottled.current = true;
     
     try {
       setIsFetchingMore(true);
@@ -187,22 +203,53 @@ const Leaderboard = () => {
       
       const data = await api.getLeaderboard({ 
         page: nextPage, 
-        limit: 20, 
+        limit: PAGE_LIMIT, // Increased batch size for better scrolling
         sortBy, 
         college: selectedCollege 
       });
       
       if (data.status === 'success') {
-        setLeaderboardData(prev => [...prev, ...data.data]);
+        setLeaderboardData(prev => {
+          // Deduplicate based on _id
+          const merged = [
+            ...prev,
+            ...data.data.filter(newStudent => !prev.some(existing => existing._id === newStudent._id))
+          ];
+          return merged.length > MAX_RENDERED_ITEMS ? merged.slice(merged.length - MAX_RENDERED_ITEMS) : merged;
+        });
         setPage(nextPage);
-        setHasMore(data.meta.pagination.page < data.meta.pagination.totalPages);
+        setHasMore(data.data.length === PAGE_LIMIT); // Ensure hasMore is based on data length
       }
     } catch (err) {
       console.error('Error fetching more data:', err);
     } finally {
       setIsFetchingMore(false);
+      // Release throttle after a short delay to prevent double-firing
+      setTimeout(() => {
+        isThrottled.current = false;
+      }, 500);
     }
-  };
+  }, [isFetchingMore, hasMore, page, sortBy, selectedCollege]);
+
+  useEffect(() => {
+    if (isFetchingMore) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        if (!hasMore || isFetchingMore) return;
+        handleLoadMore();
+      },
+      { threshold: 0, rootMargin: '300px' }
+    );
+
+    const el = loadMoreRef.current;
+    if (el) observer.observe(el);
+
+    return () => {
+      if (el) observer.unobserve(el);
+      observer.disconnect();
+    };
+  }, [handleLoadMore, hasMore, isFetchingMore]);
 
   // Removed client-side filtering and sorting since backend handles it now
   const sortedData = leaderboardData; 
@@ -273,7 +320,7 @@ const Leaderboard = () => {
           />
         </div>
 
-        <motion.div 
+        <Motion.div 
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5 }}
@@ -282,8 +329,9 @@ const Leaderboard = () => {
           {/* Header Row */}
           <div className="hidden lg:grid grid-cols-12 bg-black/40 px-6 py-5 font-bold text-gray-400 uppercase tracking-wider text-xs border-b border-white/10">
             <div className="col-span-1">Rank</div>
-            <div className="col-span-5">Student</div>
-            <div className="col-span-5 text-center">
+            <div className="col-span-4">Student</div>
+            <div className="col-span-2 text-center">Rating</div>
+            <div className="col-span-4 text-center">
               {sortBy === 'total' && 'Total Solved'}
               {sortBy === 'todayQuestions' && 'Questions (Today)'}
               {sortBy === 'yesterdaySubmissions' && 'Submissions (Y)'}
@@ -293,19 +341,23 @@ const Leaderboard = () => {
           </div>
 
           <div className="space-y-3 lg:space-y-0 lg:divide-y lg:divide-white/5">
-            <AnimatePresence mode='wait'>
-              {sortedData.map((student, index) => (
-                <motion.div
-                  key={student._id}
-                  initial={{ opacity: 0, x: -20 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  transition={{ duration: 0.3, delay: index < 10 ? index * 0.05 : 0 }}
-                >
-                  <Link
-                    to={`/student/${student._id}`}
-                    state={{ from: 'leaderboard' }}
-                    className="block lg:grid grid-cols-12 p-4 lg:px-6 lg:py-5 bg-gradient-to-br from-gray-800/40 to-black/40 lg:bg-transparent rounded-2xl lg:rounded-none border border-white/10 lg:border-0 hover:bg-white/5 transition-all duration-300 group backdrop-blur-sm"
+            <AnimatePresence initial={false}>
+              {sortedData.map((student, index) => {
+                // Only animate the first 20 items to prevent lag on infinite scroll
+                const shouldAnimate = enableMotion && index < 20;
+                
+                return (
+                  <Motion.div
+                    key={student._id}
+                    initial={shouldAnimate ? { opacity: 0, x: -20 } : { opacity: 1, x: 0 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={{ duration: 0.3, delay: shouldAnimate ? index * 0.05 : 0 }}
                   >
+                    <Link
+                      to={`/student/${student._id}`}
+                      state={{ from: 'leaderboard' }}
+                      className="block lg:grid grid-cols-12 p-4 lg:px-6 lg:py-5 bg-gradient-to-br from-gray-800/40 to-black/40 lg:bg-transparent rounded-2xl lg:rounded-none border border-white/10 lg:border-0 hover:bg-white/5 transition-all duration-300 group backdrop-blur-sm"
+                    >
                     {/* Mobile View */}
                     <div className="lg:hidden">
                       <div className="flex items-center justify-between w-full">
@@ -327,6 +379,9 @@ const Leaderboard = () => {
                           <div className="min-w-0 flex-1">
                             <div className="font-bold text-white text-sm truncate group-hover:text-purple-400 transition-colors">{student.name}</div>
                             <div className="text-xs text-gray-500 truncate font-mono">@{student.leetcodeProfileID}</div>
+                            <div className="text-[10px] text-yellow-500/90 font-semibold truncate">
+                              Rating: {student.contestRating > 0 ? Math.round(student.contestRating) : 'Not Participated'}
+                            </div>
                           </div>
                         </div>
                         <div className="text-right flex-shrink-0 ml-4 flex flex-col justify-center">
@@ -368,7 +423,7 @@ const Leaderboard = () => {
                       </div>
                     </div>
                     
-                    <div className="hidden lg:flex col-span-5 items-center">
+                    <div className="hidden lg:flex col-span-4 items-center">
                       <div className="flex items-center space-x-4">
                         <StudentAvatar 
                           url={student.userAvatar} 
@@ -383,7 +438,13 @@ const Leaderboard = () => {
                       </div>
                     </div>
 
-                    <div className="hidden lg:flex col-span-5 items-center justify-center">
+                    <div className="hidden lg:flex col-span-2 items-center justify-center">
+                      <div className="text-sm font-bold text-yellow-500/90">
+                        {student.contestRating > 0 ? Math.round(student.contestRating) : 0}
+                      </div>
+                    </div>
+
+                    <div className="hidden lg:flex col-span-4 items-center justify-center">
                       <div className="text-center group-hover:scale-110 transition-transform duration-300">
                         {sortBy === 'total' && (
                           <>
@@ -436,28 +497,29 @@ const Leaderboard = () => {
                       </div>
                     </div>
                   </Link>
-                </motion.div>
-              ))}
+                </Motion.div>
+              );
+            })}
             </AnimatePresence>
           </div>
-        </motion.div>
+        </Motion.div>
 
         <div className="mt-12 flex flex-col items-center space-y-6 text-center">
           {hasMore && (
-            <button 
-              onClick={handleLoadMore}
-              disabled={isFetchingMore}
-              className="px-8 py-3 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-full font-bold shadow-lg transition-all duration-300 transform hover:-translate-y-1"
+            <div 
+              ref={loadMoreRef}
+              onClick={!isFetchingMore ? handleLoadMore : undefined}
+              className={`px-8 py-3 text-white rounded-full font-bold transition-all duration-300 ${!isFetchingMore ? 'cursor-pointer' : ''}`}
             >
               {isFetchingMore ? (
                 <span className="flex items-center space-x-2">
                   <span className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin"></span>
-                  <span>Loading...</span>
+                  <span>Loading more students...</span>
                 </span>
               ) : (
-                'Load More Students'
+                <span>Load More</span>
               )}
-            </button>
+            </div>
           )}
 
           <div className="inline-block bg-black/40 px-6 py-3 rounded-full border border-white/10 backdrop-blur-md shadow-xl">

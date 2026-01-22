@@ -263,6 +263,52 @@ async function fetchLeetCodeUserData(username) {
     // Points calculation (example: 10 points for hard, 5 for medium, 2 for easy)
     const points = (hardSolved * 10) + (mediumSolved * 5) + (easySolved * 2);
 
+    // Extract contest rating
+    let contestRating = 0;
+    let contestGlobalRanking = 0;
+    let contestParticipation = 0;
+
+    // Try to get contest info from userContestRanking
+    if (userProfile.userContestRanking) {
+      contestRating = Math.round(userProfile.userContestRanking.rating || 0);
+      contestGlobalRanking = userProfile.userContestRanking.globalRanking || 0;
+      contestParticipation = userProfile.userContestRanking.attendedContestsCount || 0;
+    } else if (matchedUserData.userContestRanking) {
+       contestRating = Math.round(matchedUserData.userContestRanking.rating || 0);
+       contestGlobalRanking = matchedUserData.userContestRanking.globalRanking || 0;
+       contestParticipation = matchedUserData.userContestRanking.attendedContestsCount || 0;
+    }
+    
+    // If still not found, try to fetch it via GraphQL
+    if (contestRating === 0 && leetcode.graphql) {
+       try {
+         const queryObj = {
+           query: `
+             query userContestRankingInfo($username: String!) {
+               userContestRanking(username: $username) {
+                 attendedContestsCount
+                 rating
+                 globalRanking
+                 topPercentage
+                 badge {
+                   name
+                 }
+               }
+             }
+           `,
+           variables: { username }
+         };
+         const result = await leetcode.graphql(queryObj);
+         if (result.data && result.data.userContestRanking) {
+            contestRating = Math.round(result.data.userContestRanking.rating || 0);
+            contestGlobalRanking = result.data.userContestRanking.globalRanking || 0;
+            contestParticipation = result.data.userContestRanking.attendedContestsCount || 0;
+         }
+       } catch (e) {
+         // console.log('Contest rating fetch failed:', e.message);
+       }
+    }
+
     return {
       username: username,
       name: profile.realName || username,
@@ -311,6 +357,11 @@ async function fetchLeetCodeUserData(username) {
       yesterdayQuestionsSolved: yesterdayQuestionsSolved,
       todayQuestionsSolved: todayQuestionsSolved,
       yesterdaySubmissions: yesterdaySubmissions,
+      
+      // Contest info
+      contestRating,
+      contestGlobalRanking,
+      contestParticipation,
       
       lastUpdated: new Date()
     };
@@ -437,7 +488,7 @@ leetcodeRoutes.get('/cron-update', async (req, res) => {
 leetcodeRoutes.post('/update-all-now', async (req, res) => {
   // This is now discouraged for production but kept for manual admin use
   try {
-    const result = await updateStaleUsers(132); // Try to update a large batch manually if needed
+    const result = await updateStaleUsers(165); // Try to update a large batch manually if needed
     res.json({ message: 'Manual batch update completed', result });
   } catch (error) {
     res.status(500).json({ error: 'Failed', details: error.message });

@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion as Motion, AnimatePresence } from 'framer-motion';
 import { api } from '../services/api';
 
 const StudentList = () => {
@@ -9,10 +9,9 @@ const StudentList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  const [page, setPage] = useState(1);
+  const [_page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
-  const [totalStudents, setTotalStudents] = useState(0);
 
   // Map URL param to college name
   const getSelectedCollege = () => {
@@ -24,20 +23,10 @@ const StudentList = () => {
 
   const selectedCollege = getSelectedCollege();
 
-  // Debounce search term
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setPage(1);
-      fetchStudents(1, true);
-    }, 500);
-
-    return () => clearTimeout(timer);
-  }, [searchTerm, selectedCollege]);
-
-  const fetchStudents = async (pageNum, reset = false) => {
+  const fetchStudents = useCallback(async (pageNum, reset = false) => {
     try {
       if (pageNum === 1) setLoading(true);
-      
+
       const result = await api.getLeaderboard({
         page: pageNum,
         limit: 24,
@@ -57,9 +46,8 @@ const StudentList = () => {
         } else {
           setStudents(prev => [...prev, ...newStudents]);
         }
-        
+
         setHasMore(result.meta.pagination.page < result.meta.pagination.totalPages);
-        setTotalStudents(result.meta.pagination.total);
       } else {
         throw new Error(result.message || 'Failed to fetch students');
       }
@@ -70,18 +58,26 @@ const StudentList = () => {
       setLoading(false);
       setIsFetchingMore(false);
     }
-  };
+  }, [searchTerm, selectedCollege]);
+
+  // Debounce search term
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setPage(1);
+      fetchStudents(1, true);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [fetchStudents, searchTerm, selectedCollege]);
 
   const handleLoadMore = () => {
     if (!hasMore || isFetchingMore) return;
     setIsFetchingMore(true);
-    setPage(prev => prev + 1);
-    fetchStudents(page + 1, false);
-  };
-
-
-  const getColorTheme = (index) => {
-    return 'from-gray-600 to-gray-800';
+    setPage(prev => {
+      const next = prev + 1;
+      fetchStudents(next, false);
+      return next;
+    });
   };
 
   const filteredStudents = students;
@@ -172,13 +168,13 @@ const StudentList = () => {
         </div>
 
         {/* Header Section */}
-        <motion.div 
+        <Motion.div 
           className="text-center mb-16 relative"
           variants={headerVariants}
           initial="hidden"
           animate="visible"
         >
-          <motion.div 
+          <Motion.div 
             className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-purple-500/20 rounded-full blur-[100px] -z-10"
             animate={{ 
               scale: [1, 1.2, 1],
@@ -189,7 +185,7 @@ const StudentList = () => {
               repeat: Infinity,
               ease: "easeInOut"
             }}
-          ></motion.div>
+          ></Motion.div>
           <h1 className="text-4xl sm:text-5xl md:text-6xl font-black mb-6 text-transparent bg-clip-text bg-gradient-to-r from-white via-purple-200 to-gray-400 tracking-tight">
             Student Showcase
           </h1>
@@ -212,10 +208,10 @@ const StudentList = () => {
               onChange={(e) => setSearchTerm(e.target.value)}
             />
           </div>
-        </motion.div>
+        </Motion.div>
 
         {/* Students Grid */}
-        <motion.div 
+        <Motion.div 
           className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6"
           variants={containerVariants}
           initial="hidden"
@@ -223,7 +219,7 @@ const StudentList = () => {
         >
           <AnimatePresence mode="popLayout">
             {filteredStudents.map((student) => (
-              <motion.div
+              <Motion.div
                 key={student._id}
                 variants={itemVariants}
                 initial="hidden"
@@ -355,10 +351,10 @@ const StudentList = () => {
                     </div>
                   </div>
                 </Link>
-              </motion.div>
+              </Motion.div>
             ))}
           </AnimatePresence>
-        </motion.div>
+        </Motion.div>
 
         {/* Load More Button */}
         {hasMore && (
@@ -381,7 +377,7 @@ const StudentList = () => {
         )}
 
         {filteredStudents.length === 0 && !loading && (
-          <motion.div 
+          <Motion.div 
             className="text-center py-20"
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -394,7 +390,7 @@ const StudentList = () => {
             </div>
             <h3 className="text-2xl font-bold text-white mb-2">No students found</h3>
             <p className="text-gray-400">Try adjusting your search criteria</p>
-          </motion.div>
+          </Motion.div>
         )}
       </div>
     </div>
